@@ -1,0 +1,13 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PageTitle = void 0;
+const react_1 = __importDefault(require("react"));
+class PageTitle extends react_1.default.PureComponent {
+    render() {
+        return react_1.default.createElement("h3", { className: "pageTitle" }, "\u30D7\u30EC\u30A4\u5C65\u6B74");
+    }
+}
+exports.PageTitle = PageTitle;

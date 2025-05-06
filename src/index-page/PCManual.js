@@ -1,0 +1,45 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PCManual = void 0;
+const react_1 = __importDefault(require("react"));
+const lang_react_1 = require("../common/lang-react");
+const all_bookmarklets_1 = require("./all-bookmarklets");
+const MessagesByLang = {
+    ["zh-TW" /* Language.zh_TW */]: {
+        title: "在電腦上怎麼新增和使用書籤？",
+        showBookmarksBar: "顯示瀏覽器的書籤列。",
+        create: "把下方連結拖曳到書籤列，書籤小工具就建立完成了。",
+        use: "使用時，先登入 maimai NET 並進入要使用書籤的頁面後，再點擊書籤。",
+    },
+    ["en-US" /* Language.en_US */]: {
+        title: "How to create and execute bookmarklets on PC?",
+        showBookmarksBar: "Show bookmarks bar (or favorites bar) in browser.",
+        create: "Drag the link into the bookmarks bar to save the bookmarklet. (MMBL stands for MaiMai BookmarkLets)",
+        use: "To use the bookmarklet, log in to maimai DX NET and open the page you want to use the bookmarklet on, and then click the bookmarklet in bookmarks bar.",
+    },
+    ["ko-KR" /* Language.ko_KR */]: {
+        title: "어떻게 하면 PC에서 북마크를 만들고 실행할 수 있나요?",
+        showBookmarksBar: "브라우저의 북마크 (혹은 즐겨찾기)를 여세요.",
+        create: "링크를 북마크로 드래그 하세요. (MMBL은 MaiMai BookmarkLets를 의미합니다)",
+        use: "북마크를 사용하려면 maimai DX NET에 로그인하고 사용하고 싶은 페이지에서 북마크를 클릭합니다.",
+    },
+};
+const PCManual = () => {
+    const lang = (0, lang_react_1.useLanguage)();
+    const messages = MessagesByLang[lang];
+    return (react_1.default.createElement(react_1.default.Fragment, null,
+        react_1.default.createElement("h3", null,
+            "\u25CF ",
+            messages.title),
+        react_1.default.createElement("div", null,
+            react_1.default.createElement("p", null, messages.showBookmarksBar),
+            react_1.default.createElement("p", null,
+                messages.create,
+                react_1.default.createElement("br", null),
+                react_1.default.createElement("a", { className: "bookmarkletCopy", href: all_bookmarklets_1.BOOKMARKLET_LINK }, all_bookmarklets_1.LinkNameByLang[lang])),
+            react_1.default.createElement("p", null, messages.use))));
+};
+exports.PCManual = PCManual;

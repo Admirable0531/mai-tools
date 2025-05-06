@@ -37,6 +37,7 @@ import {handleError} from '../common/util';
     import('./song-detail-helper');
   } else if (path.startsWith('/maimai-mobile/record/music')) {
     import('./score-sort');
+    import('./play-last');
   } else if (path.startsWith('/maimai-mobile/friend/')) {
     import('./analyze-friend-rating-in-new-tab');
     if (path.startsWith('/maimai-mobile/friend/friendDetail/')) {

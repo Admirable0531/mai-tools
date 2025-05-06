@@ -38,6 +38,10 @@ const enum SortBy {
   InLvAsc = 'InLvAsc',
   DxStarDes = 'DxStarDes',
   DxStarAsc = 'DxStarAsc',
+  PlayCountAsc = 'PlayCountAsc',
+  PlayCountDes = 'PlayCountDes',
+  LastPlayedAsc = 'LastPlayedAsc',
+  LastPlayedDes = 'LastPlayedDes',
 }
 
 const enum SectionHeadStyle {
@@ -70,6 +74,10 @@ type Cache = {
       [SortBy.InLvDes]: 'Internal Level (high \u2192 low)',
       [SortBy.DxStarDes]: 'DX-Star (7 \u2192 none)',
       [SortBy.DxStarAsc]: 'DX-Star (none \u2192 7)',
+      [SortBy.PlayCountAsc]: 'Play Count (low \u2192 high)',
+      [SortBy.PlayCountDes]: 'Play Count (high \u2192 low)',
+      [SortBy.LastPlayedAsc]: 'Last Played (old \u2192 new)',
+      [SortBy.LastPlayedDes]: 'Last Played (new \u2192 old)',
     },
     [Language.zh_TW]: {
       [SortBy.None]: '-- 選擇排序方式 --',
@@ -87,6 +95,10 @@ type Cache = {
       [SortBy.InLvDes]: '內部譜面等級 (由高至低)',
       [SortBy.DxStarDes]: 'DX-Star (7 星至無星)',
       [SortBy.DxStarAsc]: 'DX-Star (無星至 7 星)',
+      [SortBy.PlayCountAsc]: 'Play Count (由低至高)',
+      [SortBy.PlayCountDes]: 'Play Count (由高至低)',
+      [SortBy.LastPlayedAsc]: 'Last Played (由低至高)',
+      [SortBy.LastPlayedDes]: 'Last Played (由高至低)',
     },
     [Language.ko_KR]: {
       [SortBy.None]: '-- 정렬 순서를 선택해주세요 --',
@@ -104,6 +116,10 @@ type Cache = {
       [SortBy.InLvDes]: '난이도 상수 내림차순 (높음 \u2192 낮음)',
       [SortBy.DxStarDes]: 'DX-Star 내림차순 (7 \u2192 none)',
       [SortBy.DxStarAsc]: 'DX-Star 오름차순 (none \u2192 7)',
+      [SortBy.PlayCountAsc]: 'Play Count (낮음 \u2192 높음)',
+      [SortBy.PlayCountDes]: 'Play Count (높음 \u2192 낮음)',
+      [SortBy.LastPlayedAsc]: 'Last Played (낮음 \u2192 높음)',
+      [SortBy.LastPlayedDes]: 'Last Played (높음 \u2192 낮음)',
     },
   }[LANG];
   const CHART_LEVELS = [
@@ -515,6 +531,18 @@ type Cache = {
       case SortBy.DxStarDes:
         sortedRows = sortRowsByDxStar(rows, true);
         break;
+        case SortBy.PlayCountAsc:
+      sortedRows = sortRowsByPlayCount(rows, false);
+        break;
+      case SortBy.PlayCountDes:
+        sortedRows = sortRowsByPlayCount(rows, true);
+        break;
+      case SortBy.LastPlayedAsc:
+        sortedRows = sortRowsByLastPlayed(rows, false);
+        break;
+      case SortBy.LastPlayedDes:
+        sortedRows = sortRowsByLastPlayed(rows, true);
+        break;
       default:
         return;
     }
@@ -709,9 +737,38 @@ type Cache = {
     select.append(createOption(SortBy.LvDes));
     select.append(createOption(SortBy.InLvAsc, true));
     select.append(createOption(SortBy.InLvDes, true));
+    select.append(createOption(SortBy.PlayCountAsc));
+    select.append(createOption(SortBy.PlayCountDes));
+    select.append(createOption(SortBy.LastPlayedAsc));
+    select.append(createOption(SortBy.LastPlayedDes));
     div.append(select);
     return div;
   }
+
+  function getPlayCount(row: HTMLElement): number {
+    const el = row.querySelector('.play-count');
+    return el ? parseInt(el.textContent.trim()) : 0;
+  }
+
+  function getLastPlayed(row: HTMLElement): number {
+    const el = row.querySelector('.last-played');
+    return el ? new Date(el.textContent.trim()).getTime() : 0;
+  }
+
+  function sortRowsByPlayCount(rows: NodeListOf<HTMLElement>, reverse: boolean) {
+    const sorted = Array.from(rows).sort((a, b) =>
+      reverse ? getPlayCount(b) - getPlayCount(a) : getPlayCount(a) - getPlayCount(b)
+    );
+    return sorted;
+  }
+
+  function sortRowsByLastPlayed(rows: NodeListOf<HTMLElement>, reverse: boolean) {
+    const sorted = Array.from(rows).sort((a, b) =>
+      reverse ? getLastPlayed(b) - getLastPlayed(a) : getLastPlayed(a) - getLastPlayed(b)
+    );
+    return sorted;
+  }
+
 
   async function fetchAndAddInternalLvSort() {
     const gameVer = await fetchGameVersion(d.body);

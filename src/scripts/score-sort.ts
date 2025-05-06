@@ -759,14 +759,20 @@ type Cache = {
     const sorted = Array.from(rows).sort((a, b) =>
       reverse ? getPlayCount(b) - getPlayCount(a) : getPlayCount(a) - getPlayCount(b)
     );
-    return sorted;
+    const heading = d.createElement('div');
+    heading.className = 'screw_block m_15 f_15 p_s';
+    heading.innerText = `《Play Count》\u3000\u3000\u3000${sorted.length} Songs`;
+    return [heading, ...sorted];
   }
 
   function sortRowsByLastPlayed(rows: NodeListOf<HTMLElement>, reverse: boolean) {
     const sorted = Array.from(rows).sort((a, b) =>
       reverse ? getLastPlayed(b) - getLastPlayed(a) : getLastPlayed(a) - getLastPlayed(b)
     );
-    return sorted;
+    const heading = d.createElement('div');
+    heading.className = 'screw_block m_15 f_15 p_s';
+    heading.innerText = `《Last Played》\u3000\u3000\u3000${sorted.length} Songs`;
+    return [heading, ...sorted];
   }
 
 

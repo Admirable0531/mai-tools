@@ -37,7 +37,6 @@
       container.innerHTML = `
         <div class="music_score_block w_120 d_ib t_r f_12 last-played">${lastPlayed}</div>
         <div class="music_score_block w_310 m_r_0 d_ib t_r f_12 play-count">
-          <img src="https://maimaidx-eng.com/maimai-mobile/img/icon_music.png" class="v_m f_l">
           ${playCount}
         </div>
       `;

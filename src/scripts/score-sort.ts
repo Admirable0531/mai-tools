@@ -746,40 +746,44 @@ type Cache = {
   }
 
   function getPlayCount(row: HTMLElement): number {
-    const text = row.textContent;
-    const match = text?.match(/\uD83D\uDD39 (\d+) plays/); // 🔹 123 plays
-    return match ? parseInt(match[1]) : 0;
+    const divs = Array.from(row.querySelectorAll('.music_score_block'));
+    for (const div of divs) {
+      const text = div.textContent?.trim();
+      if (text?.includes('plays')) {
+        const match = text.match(/(\d+)\s+plays/);
+        if (match) return parseInt(match[1]);
+      }
+    }
+    return 0;
   }
 
   function getLastPlayed(row: HTMLElement): number {
-    const text = row.textContent;
-    const match = text?.match(/\uD83D\uDCC5 (\d{4}\/\d{2}\/\d{2} \d{2}:\d{2})/); // 📅 2025/05/05 20:53
-    if (!match) return 0;
-    const date = new Date(match[1].replace(/\//g, '-'));
-    return isNaN(date.getTime()) ? 0 : date.getTime();
+    const divs = Array.from(row.querySelectorAll('.music_score_block'));
+    for (const div of divs) {
+      const text = div.textContent?.trim();
+      if (text?.includes('📅')) {
+        const dateText = text.replace('📅', '').trim();
+        return new Date(dateText).getTime();
+      }
+    }
+    return 0;
   }
 
   function sortRowsByPlayCount(rows: NodeListOf<HTMLElement>, reverse: boolean) {
-    const sorted = Array.from(rows).sort((a, b) => {
-      return reverse ? getPlayCount(b) - getPlayCount(a) : getPlayCount(a) - getPlayCount(b);
-    });
-    const heading = document.createElement('div');
-    heading.className = 'screw_block m_15 f_15 p_s';
-    heading.innerText = `《Play Count》\u3000\u3000\u3000${sorted.length} Songs`;
-    return [heading, ...sorted];
+    const map = new Map<string, HTMLElement[]>();
+    map.set('Play Count', Array.from(rows).sort((a, b) =>
+      reverse ? getPlayCount(b) - getPlayCount(a) : getPlayCount(a) - getPlayCount(b)
+    ));
+    return createRowsWithSection(map, SectionHeadStyle.Default, rows.length);
   }
-
 
   function sortRowsByLastPlayed(rows: NodeListOf<HTMLElement>, reverse: boolean) {
-    const sorted = Array.from(rows).sort((a, b) => {
-      return reverse ? getLastPlayed(b) - getLastPlayed(a) : getLastPlayed(a) - getLastPlayed(b);
-    });
-    const heading = document.createElement('div');
-    heading.className = 'screw_block m_15 f_15 p_s';
-    heading.innerText = `《Last Played》\u3000\u3000\u3000${sorted.length} Songs`;
-    return [heading, ...sorted];
+    const map = new Map<string, HTMLElement[]>();
+    map.set('Last Played', Array.from(rows).sort((a, b) =>
+      reverse ? getLastPlayed(b) - getLastPlayed(a) : getLastPlayed(a) - getLastPlayed(b)
+    ));
+    return createRowsWithSection(map, SectionHeadStyle.Default, rows.length);
   }
-
 
   async function fetchAndAddInternalLvSort() {
     const gameVer = await fetchGameVersion(d.body);

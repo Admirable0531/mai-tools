@@ -32,6 +32,7 @@ const VERSION_NAMES = [
   'PRiSM PLUS',
   'CiRCLE', // 25
   'CiRCLE PLUS',
+  'MAGiCAL', // 27
   // NOTE: values here are shown in rating table, so avoid adding suffixes like "(beta)"
 ];
 
@@ -47,9 +48,10 @@ export const enum GameVersion {
   PRiSM_PLUS = 24,
   CiRCLE = 25,
   CiRCLE_PLUS = 26,
+  MAGiCAL = 27,
 }
 
-export const LATEST_VERSION = GameVersion.CiRCLE_PLUS;
+export const LATEST_VERSION = GameVersion.MAGiCAL;
 
 export function validateGameVersion(
   ver: number | string | null,

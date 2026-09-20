@@ -116,13 +116,21 @@ function annotate(row: HTMLElement, block: HTMLElement, info: PlayInfo): void {
 type Target = {row: HTMLElement; block: HTMLElement; idx: string; diffId: string};
 
 function collectTargets(document: Document): Target[] {
-  const rows = Array.from(
-    document.body.querySelectorAll<HTMLElement>('.main_wrapper.t_c .w_450.m_15.f_0')
+  // Key off the difficulty block, not the row's utility classes. The wrapper is
+  // spelled differently across the score pages (musicGenre, musicLevel,
+  // musicVersion, ...), and matching an exact class list there silently found
+  // nothing on the ones that differ. The coloured block is the constant.
+  const blocks = Array.from(
+    document.body.querySelectorAll<HTMLElement>('div[class*="_score_back"]')
   );
   const targets: Target[] = [];
-  for (const row of rows) {
-    // Already annotated (script run twice on the same page).
-    if (row.hasAttribute(PLAY_COUNT_ATTR)) {
+  for (const block of blocks) {
+    // Everything we read — score blocks, the idx form — lives inside the
+    // coloured block. The row is only needed to carry the data attributes
+    // sorting reads, so fall back to the block's parent when the usual row
+    // wrapper is not there.
+    const row = (block.closest<HTMLElement>('.w_450') ?? block.parentElement) as HTMLElement;
+    if (!row || row.hasAttribute(PLAY_COUNT_ATTR)) {
       continue;
     }
     // An unplayed chart has no play count to show, and asking for it is a
@@ -131,25 +139,30 @@ function collectTargets(document: Document): Target[] {
     // a played row has one for the achievement (and usually one for DX score),
     // an unplayed row renders none at all. Test for the element rather than
     // parsing it, so a real 0.0000% play is not mistaken for unplayed.
-    if (!row.querySelector('.music_score_block')) {
+    if (!block.querySelector('.music_score_block')) {
       continue;
     }
-    const block = row.querySelector<HTMLElement>('div[class*="_score_back"]');
-    // The detail page's section ids are the same words the row's class uses:
+    // The detail page's section ids are the same words the block's class uses:
     // basic / advanced / expert / master / remaster.
-    const diffId = block?.className.match(/music_([a-z]+)_score_back/)?.[1];
-    // getSongIdx throws on a row with a form but no idx input, and pages other
-    // than the score list do not always have one.
+    const diffId = block.className.match(/music_([a-z]+)_score_back/)?.[1];
+    // getSongIdx throws on an element with a form but no idx input, and pages
+    // other than the score list do not always have one.
     let idx: string = null;
     try {
-      idx = getSongIdx(row);
+      idx = getSongIdx(block);
     } catch (e) {
       continue;
     }
-    if (!block || !diffId || !idx) {
+    if (!diffId || !idx) {
       continue;
     }
     targets.push({row, block, idx, diffId});
+  }
+  if (blocks.length && !targets.length) {
+    console.warn(
+      `[play-last] found ${blocks.length} chart blocks but none usable — ` +
+        'the page markup is not what this expects'
+    );
   }
   return targets;
 }
@@ -167,10 +180,19 @@ function addLoadAllControl(
   d: Document,
   loader: PlayInfoLoader,
   bySong: Map<string, Target[]>,
-  loadedSongs: Set<string>
+  loadedSongs: Set<string>,
+  firstTarget: Target | undefined
 ): {refresh: () => void; startAll: () => void} | null {
-  const anchor = d.body.querySelector('.main_wrapper.t_c .screw_block');
-  if (!anchor || d.getElementById('maiToolsLoadAllPlayInfo')) {
+  if (d.getElementById('maiToolsLoadAllPlayInfo')) {
+    return null;
+  }
+  // Not every score page has a screw_block header, so fall back to sitting
+  // above the first chart row rather than not appearing at all.
+  const anchor =
+    d.body.querySelector('.main_wrapper.t_c .screw_block') ??
+    firstTarget?.row ??
+    d.body.querySelector('.main_wrapper.t_c div[class*="_score_back"]')?.parentElement;
+  if (!anchor) {
     return null;
   }
 
@@ -303,7 +325,7 @@ export async function addPlayAndLastPlayedInfo(document: Document): Promise<void
     }
   );
 
-  const control = addLoadAllControl(document, loader, bySong, loadedSongs);
+  const control = addLoadAllControl(document, loader, bySong, loadedSongs, targets[0]);
   if (control) {
     onProgress = control.refresh;
   }

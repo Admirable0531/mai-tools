@@ -3,19 +3,21 @@ import {getInitialLanguage, Language} from '../common/lang';
 import {removeScrollControl} from '../common/net-helpers';
 import {PLAY_HISTORY_PATH} from '../common/play-history';
 import {handleError} from '../common/util';
-import { addPlayAndLastPlayedInfo } from './play-last';
 
 (function (d) {
   const LANG = getInitialLanguage();
   const UIString = {
     [Language.zh_TW]: {
       pleaseLogIn: '請登入 maimai DX NET',
+      playInfoFailed: '無法載入遊玩次數與最後遊玩日期。',
     },
     [Language.en_US]: {
       pleaseLogIn: 'Please log in to maimai DX NET.',
+      playInfoFailed: 'Could not load play count and last played date.',
     },
     [Language.ko_KR]: {
       pleaseLogIn: 'maimai DX NET에 로그인 해 주세요.',
+      playInfoFailed: '플레이 횟수와 최종 플레이 일시를 불러오지 못했습니다.',
     },
   }[LANG];
 
@@ -38,7 +40,12 @@ import { addPlayAndLastPlayedInfo } from './play-last';
     import('./song-detail-helper');
   } else if (path.startsWith('/maimai-mobile/record/music')) {
     import('./score-sort');
-    addPlayAndLastPlayedInfo(document);
+    import('./play-last')
+      .then((m) => m.addPlayAndLastPlayedInfo(d))
+      .catch((err) => {
+        console.error(err);
+        handleError(UIString.playInfoFailed);
+      });
   } else if (path.startsWith('/maimai-mobile/friend/')) {
     import('./analyze-friend-rating-in-new-tab');
     if (path.startsWith('/maimai-mobile/friend/friendDetail/')) {

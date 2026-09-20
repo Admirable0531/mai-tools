@@ -19,6 +19,7 @@ import {
   getOfficialLevel,
 } from '../common/level-helper';
 import {fetchGameVersion, fetchPage} from '../common/net-helpers';
+import {LAST_PLAYED_ATTR, PLAY_COUNT_ATTR, PLAY_INFO_READY_EVENT} from '../common/play-info';
 import {fetchSongGenre, getCachedSongGenre, getSongIdx} from '../common/song-name-helper';
 import {loadSongDatabase, SongDatabase, SongProperties} from '../common/song-props';
 
@@ -531,8 +532,8 @@ type Cache = {
       case SortBy.DxStarDes:
         sortedRows = sortRowsByDxStar(rows, true);
         break;
-        case SortBy.PlayCountAsc:
-      sortedRows = sortRowsByPlayCount(rows, false);
+      case SortBy.PlayCountAsc:
+        sortedRows = sortRowsByPlayCount(rows, false);
         break;
       case SortBy.PlayCountDes:
         sortedRows = sortRowsByPlayCount(rows, true);
@@ -745,43 +746,38 @@ type Cache = {
     return div;
   }
 
+  // play-last stamps these on the row, so sorting never has to re-parse the
+  // label text it renders. Rows it could not annotate sort as -1 (i.e. last in
+  // ascending order) rather than tying with a genuine zero.
   function getPlayCount(row: HTMLElement): number {
-    const divs = Array.from(row.querySelectorAll('.music_score_block'));
-    for (const div of divs) {
-      const text = div.textContent?.trim();
-      if (text?.includes('plays')) {
-        const match = text.match(/(\d+)\s+plays/);
-        if (match) return parseInt(match[1]);
-      }
-    }
-    return 0;
+    const value = parseInt(row.getAttribute(PLAY_COUNT_ATTR), 10);
+    return isNaN(value) ? -1 : value;
   }
 
   function getLastPlayed(row: HTMLElement): number {
-    const divs = Array.from(row.querySelectorAll('.music_score_block'));
-    for (const div of divs) {
-      const text = div.textContent?.trim();
-      if (text?.includes('📅')) {
-        const dateText = text.replace('📅', '').trim();
-        return new Date(dateText).getTime();
-      }
-    }
-    return 0;
+    const value = parseInt(row.getAttribute(LAST_PLAYED_ATTR), 10);
+    return isNaN(value) ? -1 : value;
   }
 
   function sortRowsByPlayCount(rows: NodeListOf<HTMLElement>, reverse: boolean) {
     const map = new Map<string, HTMLElement[]>();
-    map.set('Play Count', Array.from(rows).sort((a, b) =>
-      reverse ? getPlayCount(b) - getPlayCount(a) : getPlayCount(a) - getPlayCount(b)
-    ));
+    map.set(
+      'Play Count',
+      Array.from(rows).sort((a, b) =>
+        reverse ? getPlayCount(b) - getPlayCount(a) : getPlayCount(a) - getPlayCount(b)
+      )
+    );
     return createRowsWithSection(map, SectionHeadStyle.Default, rows.length);
   }
 
   function sortRowsByLastPlayed(rows: NodeListOf<HTMLElement>, reverse: boolean) {
     const map = new Map<string, HTMLElement[]>();
-    map.set('Last Played', Array.from(rows).sort((a, b) =>
-      reverse ? getLastPlayed(b) - getLastPlayed(a) : getLastPlayed(a) - getLastPlayed(b)
-    ));
+    map.set(
+      'Last Played',
+      Array.from(rows).sort((a, b) =>
+        reverse ? getLastPlayed(b) - getLastPlayed(a) : getLastPlayed(a) - getLastPlayed(b)
+      )
+    );
     return createRowsWithSection(map, SectionHeadStyle.Default, rows.length);
   }
 
@@ -826,5 +822,20 @@ type Cache = {
   if (firstScrewBlock) {
     firstScrewBlock.insertAdjacentElement('beforebegin', createSortOptions());
     fetchAndAddInternalLvSort();
+    // play-last fills the play count / last played values in asynchronously.
+    // If the user picked one of those sorts before the data arrived, the order
+    // they are looking at is stale, so redo it once everything is in.
+    d.addEventListener(PLAY_INFO_READY_EVENT, () => {
+      const select = d.getElementById('scoreSortContainer')?.querySelector('select');
+      const sortBy = select?.value as SortBy;
+      if (
+        sortBy === SortBy.PlayCountAsc ||
+        sortBy === SortBy.PlayCountDes ||
+        sortBy === SortBy.LastPlayedAsc ||
+        sortBy === SortBy.LastPlayedDes
+      ) {
+        performSort(sortBy);
+      }
+    });
   }
 })(document);

@@ -11,6 +11,10 @@ The purpose of this document is to list features to check when major code change
 - Single play record: DX score percentage and chart level should be displayed.
 - Single play record: can analyze score in classic-layout.
 - Self score sorting: by achievement, by ap/fc, by sync, by official level, by internal level, by dx star.
+- Self score list: each played chart gets a play count and last played date; unplayed charts get neither
+  and cost no request. Reloading the page fills them in from cache without re-fetching.
+- Self score sorting: by play count, by last played — including picking one of those before the values
+  have finished loading, which should re-sort itself once they arrive.
 - Friend score sorting: by achievement, by ap/fc, by sync, by official level, by internal level, by dx star, by vs result.
 - Song detail page: for each difficulty, DX score percentage and chart level should be displayed.
 - Album page: each photo title becomes clickable and will download the photo with correct filename (date + song name + difficulty)

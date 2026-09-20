@@ -1,5 +1,4 @@
 import {addToCache} from '../common/cache';
-import {getAchievement} from '../common/fetch-score-util';
 import {getEpochTimeFromText} from '../common/net-helpers';
 import {LAST_PLAYED_ATTR, PLAY_COUNT_ATTR, PLAY_INFO_READY_EVENT} from '../common/play-info';
 import {getSongIdx} from '../common/song-name-helper';
@@ -10,17 +9,22 @@ const CACHE_PREFIX = 'MaiToolsPlayInfo:';
 const CACHE_DURATION = 1000 * 60 * 60 * 6;
 
 /** How many detail pages may be in flight at once. */
-const MAX_CONCURRENCY = 6;
-/** Gap between request starts once the site starts pushing back. */
-const INITIAL_BACKOFF_MS = 500;
+const MAX_CONCURRENCY = 4;
+/**
+ * Minimum spacing between request starts, always applied. Firing a pool flat
+ * out is what gets the site to start refusing, and being refused is far slower
+ * than pacing ourselves. ~10/s is still well above the old 5-per-800ms.
+ */
+const BASE_GAP_MS = 100;
+/** Extra spacing once the site does push back, on top of the base gap. */
 const MAX_BACKOFF_MS = 5000;
 const MAX_ATTEMPTS = 3;
 /**
- * Consecutive failures that mean something is actually wrong — an expired
- * session, or the site refusing us outright. Retrying past this only burns
- * requests against the rate limit.
+ * A long run of failures means something systemic, not a bad row. Generous,
+ * because a handful of failures is normal and killing the run over them leaves
+ * most of the page unannotated.
  */
-const MAX_CONSECUTIVE_FAILURES = 5;
+const MAX_CONSECUTIVE_FAILURES = 20;
 
 type PlayInfo = {count: number; lastPlayed: string};
 /** Every difficulty of one song, keyed by the detail page's section id. */
@@ -39,30 +43,28 @@ const COUNT_VALUE = /^\d{1,6}$/;
  * responses start succeeding.
  */
 class Backoff {
-  private gapMs = 0;
+  private extraMs = 0;
   private nextSlot = 0;
 
-  /** Hold until this worker's turn, so the gap applies across all of them. */
+  /** Hold until this worker's turn, so the spacing applies across all of them. */
   async wait(): Promise<void> {
-    if (this.gapMs === 0) {
-      return;
-    }
+    const gap = BASE_GAP_MS + this.extraMs;
     const now = Date.now();
     const slot = Math.max(now, this.nextSlot);
-    this.nextSlot = slot + this.gapMs;
+    this.nextSlot = slot + gap;
     if (slot > now) {
       await new Promise((resolve) => setTimeout(resolve, slot - now));
     }
   }
 
   penalize(): void {
-    this.gapMs = Math.min(this.gapMs === 0 ? INITIAL_BACKOFF_MS : this.gapMs * 2, MAX_BACKOFF_MS);
-    console.warn(`[play-last] throttled, spacing requests ${this.gapMs}ms apart`);
+    this.extraMs = Math.min(this.extraMs === 0 ? BASE_GAP_MS : this.extraMs * 2, MAX_BACKOFF_MS);
+    console.warn(`[play-last] backing off to ${BASE_GAP_MS + this.extraMs}ms between requests`);
   }
 
   relax(): void {
-    if (this.gapMs > 0) {
-      this.gapMs = this.gapMs <= INITIAL_BACKOFF_MS ? 0 : Math.floor(this.gapMs / 2);
+    if (this.extraMs > 0) {
+      this.extraMs = this.extraMs <= BASE_GAP_MS ? 0 : Math.floor(this.extraMs / 2);
     }
   }
 }
@@ -81,12 +83,13 @@ class RunState {
   recordFailure(): void {
     this.backoff.penalize();
     if (++this.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-      this.aborted = true;
-      console.warn(
-        `[play-last] ${this.consecutiveFailures} requests failed in a row — stopping. ` +
-          'The session has probably expired, or the site is refusing requests.'
-      );
+      this.abortRun(`${this.consecutiveFailures} requests failed in a row`);
     }
+  }
+
+  abortRun(reason: string): void {
+    this.aborted = true;
+    console.warn(`[play-last] stopping: ${reason}`);
   }
 }
 
@@ -188,17 +191,26 @@ async function fetchSongPlayInfo(idx: string, run: RunState): Promise<SongPlayIn
     try {
       // Relative URL: same-origin, so this works on every maimai DX NET region
       // and sends the session cookie without an explicit credentials mode.
-      const res = await fetch(`${DETAIL_URL}?idx=${encodeURIComponent(idx)}`, {redirect: 'error'});
+      // Redirects are FOLLOWED, not treated as errors — maimai redirects on
+      // plenty of ordinary responses, and failing them turns a working run
+      // into a backoff spiral.
+      const res = await fetch(`${DETAIL_URL}?idx=${encodeURIComponent(idx)}`);
       if (!res.ok) {
         run.recordFailure();
         continue;
       }
       const info = parseDetailPage(await res.text());
+      // Landed somewhere that has no difficulty sections at all: the session is
+      // gone and we are looking at the login or error page. More requests will
+      // not fix that, so stop the whole run rather than working through the
+      // rest of the page.
+      if (!Object.keys(info).length && res.redirected) {
+        run.abortRun('the session has expired — log in to maimai DX NET again');
+        return null;
+      }
       run.recordSuccess();
       return info;
     } catch (e) {
-      // `redirect: 'error'` turns the logged-out redirect into a rejection, so
-      // an expired session lands here and trips the failure streak below.
       run.recordFailure();
     }
   }
@@ -208,12 +220,51 @@ async function fetchSongPlayInfo(idx: string, run: RunState): Promise<SongPlayIn
   return null;
 }
 
-function createInfoBlock(className: string, width: string, text: string): HTMLElement {
+// The look of a score block lives entirely in maimai's own .music_score_block
+// rule, and we cannot use that class (mai-tools reads achievement and DX score
+// by position among those elements, so an extra one breaks DX-star parsing).
+// Copy the painted properties off a real block in the same row instead: it
+// matches exactly, and keeps matching if the site restyles.
+const COPIED_STYLES = [
+  'background-color',
+  'background-image',
+  'background-size',
+  'background-repeat',
+  'background-position',
+  'border-top',
+  'border-right',
+  'border-bottom',
+  'border-left',
+  'border-radius',
+  'box-shadow',
+  'color',
+  'padding-top',
+  'padding-right',
+  'padding-bottom',
+  'padding-left',
+  'margin-right',
+  'min-height',
+  'line-height',
+];
+
+function createInfoBlock(
+  styleTemplate: HTMLElement | null,
+  className: string,
+  width: string,
+  text: string
+): HTMLElement {
   const div = document.createElement('div');
-  // Deliberately NOT "music_score_block": mai-tools reads the achievement and
-  // DX score by position among those, and extra ones break DX-star parsing.
   div.className = `mai-tools-play-info ${className} ${width} d_ib t_r f_12`;
   div.textContent = text;
+  if (styleTemplate) {
+    const computed = window.getComputedStyle(styleTemplate);
+    for (const prop of COPIED_STYLES) {
+      const value = computed.getPropertyValue(prop);
+      if (value) {
+        div.style.setProperty(prop, value);
+      }
+    }
+  }
   return div;
 }
 
@@ -234,11 +285,21 @@ function annotate(row: HTMLElement, block: HTMLElement, info: PlayInfo): void {
   row.setAttribute(PLAY_COUNT_ATTR, String(info.count));
   row.setAttribute(LAST_PLAYED_ATTR, String(toEpochTime(info.lastPlayed)));
 
+  // The achievement block, whose look we borrow.
+  const styleTemplate = block.querySelector<HTMLElement>('.music_score_block');
+
   const outer = document.createElement('div');
   outer.className = 't_l';
   outer.style.marginTop = '4px';
-  outer.append(createInfoBlock('play-count', 'w_120', `🕹️ ${info.count} plays`));
-  outer.append(createInfoBlock('last-played', 'w_310 m_r_0', `📅 ${lastPlayed}`));
+  outer.append(createInfoBlock(styleTemplate, 'play-count', 'w_120', `🕹️ ${info.count} plays`));
+  const lastPlayedBlock = createInfoBlock(
+    styleTemplate,
+    'last-played',
+    'w_310',
+    `📅 ${lastPlayed}`
+  );
+  lastPlayedBlock.style.marginRight = '0';
+  outer.append(lastPlayedBlock);
   block.append(outer);
 }
 
@@ -255,8 +316,12 @@ function collectTargets(document: Document): Target[] {
       continue;
     }
     // An unplayed chart has no play count to show, and asking for it is a
-    // wasted request — which is most of the cost on a full level page.
-    if (!getAchievement(row)) {
+    // wasted request — which is most of the cost on a full level page. Both
+    // kinds of row carry the idx input, so the score block is the only signal:
+    // a played row has one for the achievement (and usually one for DX score),
+    // an unplayed row renders none at all. Test for the element rather than
+    // parsing it, so a real 0.0000% play is not mistaken for unplayed.
+    if (!row.querySelector('.music_score_block')) {
       continue;
     }
     const block = row.querySelector<HTMLElement>('div[class*="_score_back"]');
@@ -324,10 +389,13 @@ export async function addPlayAndLastPlayedInfo(document: Document): Promise<void
     let next = 0;
     // A sliding pool keeps MAX_CONCURRENCY requests in flight the whole way
     // through, instead of stalling on the slowest response in each batch.
+    const startedAt = Date.now();
+    let done = 0;
     const workers = Array.from({length: Math.min(MAX_CONCURRENCY, pending.length)}, async () => {
       while (next < pending.length && !run.aborted) {
         const idx = pending[next++];
         const info = await fetchSongPlayInfo(idx, run);
+        done++;
         if (!info) {
           continue;
         }
@@ -341,6 +409,11 @@ export async function addPlayAndLastPlayedInfo(document: Document): Promise<void
       }
     });
     await Promise.all(workers);
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+    console.log(
+      `[play-last] fetched ${done}/${pending.length} songs in ${elapsed}s` +
+        (run.aborted ? ' (stopped early)' : '')
+    );
   }
 
   document.dispatchEvent(new CustomEvent(PLAY_INFO_READY_EVENT));

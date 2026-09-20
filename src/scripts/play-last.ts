@@ -9,7 +9,38 @@ import {
   REQUEST_ALL_EVENT,
 } from '../common/play-info';
 import {lockedOutFor, PlayInfo, PlayInfoLoader, toEpochTime} from '../common/play-info-fetch';
+import {getInitialLanguage, Language} from '../common/lang';
 import {getSongIdx} from '../common/song-name-helper';
+
+/** Observed safe pacing, used only to give an honest estimate up front. */
+const SECONDS_PER_SONG = 0.75;
+
+const UIString = {
+  [Language.en_US]: {
+    loadAll: (songs: number, minutes: number) =>
+      `⬇️ Load all play data (${songs} songs, ~${minutes} min)`,
+    loading: (done: number, total: number) => `Loading ${done} / ${total}… (tap to stop)`,
+    allLoaded: '✅ All play data loaded',
+    stopped: (done: number, total: number) => `Stopped at ${done} / ${total} — tap to resume`,
+    locked: (minutes: number) => `⏳ Rate limited — try again in ~${minutes} min`,
+  },
+  [Language.zh_TW]: {
+    loadAll: (songs: number, minutes: number) =>
+      `⬇️ 載入全部遊玩資料 (${songs} 首，約 ${minutes} 分鐘)`,
+    loading: (done: number, total: number) => `載入中 ${done} / ${total}…（點擊停止）`,
+    allLoaded: '✅ 已載入全部遊玩資料',
+    stopped: (done: number, total: number) => `已停止於 ${done} / ${total} — 點擊繼續`,
+    locked: (minutes: number) => `⏳ 已被限制存取 — 約 ${minutes} 分鐘後再試`,
+  },
+  [Language.ko_KR]: {
+    loadAll: (songs: number, minutes: number) =>
+      `⬇️ 전체 플레이 데이터 불러오기 (${songs}곡, 약 ${minutes}분)`,
+    loading: (done: number, total: number) => `불러오는 중 ${done} / ${total}… (탭하면 중지)`,
+    allLoaded: '✅ 전체 플레이 데이터 불러옴',
+    stopped: (done: number, total: number) => `${done} / ${total}에서 중지 — 탭하면 계속`,
+    locked: (minutes: number) => `⏳ 요청 제한 — 약 ${minutes}분 후 재시도`,
+  },
+}[getInitialLanguage()];
 
 // The look of a score block lives entirely in maimai's own .music_score_block
 // rule, and we cannot use that class (mai-tools reads achievement and DX score
@@ -126,6 +157,101 @@ function collectTargets(document: Document): Target[] {
 /** Rows within this far of the viewport are worth loading before they arrive. */
 const PRELOAD_MARGIN = '300px';
 
+/**
+ * A button that loads the rest of the page at the same paced rate, for when
+ * you want to sort by play count or last played rather than browse. Scrolling
+ * covers the browsing case; this covers wanting the whole picture, and says
+ * what it will cost before it starts.
+ */
+function addLoadAllControl(
+  d: Document,
+  loader: PlayInfoLoader,
+  bySong: Map<string, Target[]>,
+  loadedSongs: Set<string>
+): {refresh: () => void; startAll: () => void} | null {
+  const anchor = d.body.querySelector('.main_wrapper.t_c .screw_block');
+  if (!anchor || d.getElementById('maiToolsLoadAllPlayInfo')) {
+    return null;
+  }
+
+  const container = d.createElement('div');
+  container.className = 'w_450 m_15';
+  const button = d.createElement('button');
+  button.id = 'maiToolsLoadAllPlayInfo';
+  button.type = 'button';
+  Object.assign(button.style, {
+    width: '100%',
+    padding: '8px',
+    fontSize: '13px',
+    borderRadius: '4px',
+    border: '1px solid #ccc',
+    background: '#fff',
+    cursor: 'pointer',
+  });
+  container.append(button);
+  anchor.insertAdjacentElement('beforebegin', container);
+
+  let loadingAll = false;
+
+  const refresh = () => {
+    const total = bySong.size;
+    const done = loadedSongs.size;
+    const lockedFor = lockedOutFor();
+    if (lockedFor > 0) {
+      button.textContent = UIString.locked(Math.ceil(lockedFor / 60000));
+      button.disabled = true;
+      return;
+    }
+    button.disabled = false;
+    if (done >= total) {
+      button.textContent = UIString.allLoaded;
+      button.disabled = true;
+      loadingAll = false;
+      return;
+    }
+    if (loadingAll) {
+      button.textContent = loader.pending
+        ? UIString.loading(done, total)
+        : UIString.stopped(done, total);
+      if (!loader.pending) {
+        loadingAll = false;
+      }
+      return;
+    }
+    const remaining = total - done;
+    button.textContent = UIString.loadAll(
+      remaining,
+      Math.max(1, Math.round((remaining * SECONDS_PER_SONG) / 60))
+    );
+  };
+
+  const startAll = () => {
+    if (loadingAll || lockedOutFor() > 0) {
+      return;
+    }
+    loadingAll = true;
+    for (const idx of bySong.keys()) {
+      loader.request(idx);
+    }
+    refresh();
+  };
+
+  button.addEventListener('click', () => {
+    if (loadingAll) {
+      // Stop, but stay usable: rows scrolled to afterwards still load, and
+      // pressing again picks up where this left off.
+      loader.clearQueue();
+      loadingAll = false;
+      refresh();
+    } else {
+      startAll();
+    }
+  });
+
+  refresh();
+  return {refresh, startAll};
+}
+
 export async function addPlayAndLastPlayedInfo(document: Document): Promise<void> {
   const targets = collectTargets(document);
   if (!targets.length) {
@@ -156,18 +282,31 @@ export async function addPlayAndLastPlayedInfo(document: Document): Promise<void
       'loading as they scroll into view'
   );
 
+  const loadedSongs = new Set<string>();
+  let onProgress: () => void = () => undefined;
+
   const loader = new PlayInfoLoader(
     (idx, info) => {
+      loadedSongs.add(idx);
       for (const target of bySong.get(idx) ?? []) {
         const diffInfo = info[target.diffId];
         if (diffInfo) {
           annotate(target.row, target.block, diffInfo);
         }
       }
+      onProgress();
     },
     // Fires whenever the queue empties, so sorting can re-run on what arrived.
-    () => document.dispatchEvent(new CustomEvent(PLAY_INFO_READY_EVENT))
+    () => {
+      onProgress();
+      document.dispatchEvent(new CustomEvent(PLAY_INFO_READY_EVENT));
+    }
   );
+
+  const control = addLoadAllControl(document, loader, bySong, loadedSongs);
+  if (control) {
+    onProgress = control.refresh;
+  }
 
   // Asking for every played chart up front is 150-200 requests, which is what
   // trips maimai's lock however slowly they are paced. Ask only for rows the
@@ -204,12 +343,10 @@ export async function addPlayAndLastPlayedInfo(document: Document): Promise<void
     observer.observe(target.row);
   }
 
-  // Sorting reorders rows, which can bring unloaded ones on screen; the
-  // observer handles that on its own. Requesting the whole page is available
-  // through the overview, which shows progress and can be cancelled.
+  // Choosing a play-count or last-played sort needs the whole page, so it asks
+  // for the rest through the same paced queue the button uses — and shows the
+  // same progress, rather than appearing to hang.
   document.addEventListener(REQUEST_ALL_EVENT, () => {
-    for (const target of targets) {
-      loader.request(target.idx);
-    }
+    control?.startAll();
   });
 }

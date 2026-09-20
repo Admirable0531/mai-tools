@@ -454,7 +454,19 @@ export class PlayInfoLoader {
     void this.drain();
   }
 
-  /** Give up on anything not yet fetched. */
+  /**
+   * Drop what is queued but stay usable — the request in flight finishes, and
+   * anything dropped can be asked for again. This is "stop loading the rest of
+   * the page", not "give up": rows scrolled to afterwards should still load.
+   */
+  clearQueue(): void {
+    for (const idx of this.queue) {
+      this.requested.delete(idx);
+    }
+    this.queue.length = 0;
+  }
+
+  /** Give up on anything not yet fetched, for good. */
   cancel(reason = 'cancelled'): void {
     this.queue.length = 0;
     this.run.abortRun(reason);

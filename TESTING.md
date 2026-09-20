@@ -15,8 +15,11 @@ The purpose of this document is to list features to check when major code change
   about one song per second — never the whole page at once, which is what maimai rate limits
   (ERROR CODE 200001). Unplayed charts get neither, and cost no request. Reloading fills in from
   cache without re-fetching.
-- Self score sorting: by play count, by last played. Choosing one of these opts in to loading the
-  rest of the page, and the order should refresh as the values arrive.
+- Self score list: "Load all play data" button loads the rest of the page at the same paced rate,
+  showing progress. Tapping it again stops without breaking scroll-loading; tapping once more
+  resumes. It should end on "All play data loaded", or on the rate-limit notice if maimai objects.
+- Self score sorting: by play count, by last played. Choosing one of these starts the same full
+  load, and the order should refresh as the values arrive.
 - Self score list: "Last played overview" button opens a panel with a calendar heatmap (scrolled to the
   recent end, month labels along the top), a level × recency grid, and a longest-untouched list.
   Re-opening it should be near-instant, since the song data is already cached.

@@ -2,8 +2,13 @@
 // The fetching, caching and throttling live in common/play-info-fetch, shared
 // with the last-played overview.
 
-import {LAST_PLAYED_ATTR, PLAY_COUNT_ATTR, PLAY_INFO_READY_EVENT} from '../common/play-info';
-import {fetchSongPlayInfo, lockedOutFor, PlayInfo, toEpochTime} from '../common/play-info-fetch';
+import {
+  LAST_PLAYED_ATTR,
+  PLAY_COUNT_ATTR,
+  PLAY_INFO_READY_EVENT,
+  REQUEST_ALL_EVENT,
+} from '../common/play-info';
+import {lockedOutFor, PlayInfo, PlayInfoLoader, toEpochTime} from '../common/play-info-fetch';
 import {getSongIdx} from '../common/song-name-helper';
 
 // The look of a score block lives entirely in maimai's own .music_score_block
@@ -118,19 +123,13 @@ function collectTargets(document: Document): Target[] {
   return targets;
 }
 
+/** Rows within this far of the viewport are worth loading before they arrive. */
+const PRELOAD_MARGIN = '300px';
+
 export async function addPlayAndLastPlayedInfo(document: Document): Promise<void> {
   const targets = collectTargets(document);
   if (!targets.length) {
     return;
-  }
-  // This runs on every score page load, so it is the thing most likely to walk
-  // straight back into a lock. Cached rows below still get annotated.
-  const lockedFor = lockedOutFor();
-  if (lockedFor > 0) {
-    console.warn(
-      `[play-last] not fetching for another ${Math.ceil(lockedFor / 60000)} minute(s): ` +
-        'maimai DX NET locked the connection recently'
-    );
   }
 
   // One request per song, not per row: rows for two difficulties of the same
@@ -145,17 +144,72 @@ export async function addPlayAndLastPlayedInfo(document: Document): Promise<void
     }
   }
 
-  const songIdxs = Array.from(bySong.keys());
-  console.log(`[play-last] ${targets.length} played charts across ${songIdxs.length} songs`);
+  const lockedFor = lockedOutFor();
+  if (lockedFor > 0) {
+    console.warn(
+      `[play-last] not fetching for another ${Math.ceil(lockedFor / 60000)} minute(s): ` +
+        'maimai DX NET locked the connection recently. Cached rows still show.'
+    );
+  }
+  console.log(
+    `[play-last] ${targets.length} played charts across ${bySong.size} songs; ` +
+      'loading as they scroll into view'
+  );
 
-  await fetchSongPlayInfo(songIdxs, (idx, info) => {
-    for (const target of bySong.get(idx) ?? []) {
-      const diffInfo = info[target.diffId];
-      if (diffInfo) {
-        annotate(target.row, target.block, diffInfo);
+  const loader = new PlayInfoLoader(
+    (idx, info) => {
+      for (const target of bySong.get(idx) ?? []) {
+        const diffInfo = info[target.diffId];
+        if (diffInfo) {
+          annotate(target.row, target.block, diffInfo);
+        }
       }
+    },
+    // Fires whenever the queue empties, so sorting can re-run on what arrived.
+    () => document.dispatchEvent(new CustomEvent(PLAY_INFO_READY_EVENT))
+  );
+
+  // Asking for every played chart up front is 150-200 requests, which is what
+  // trips maimai's lock however slowly they are paced. Ask only for rows the
+  // viewer actually reaches: scrolling is its own rate limit, and cached rows
+  // cost nothing either way.
+  if (typeof IntersectionObserver === 'undefined') {
+    // No observer: fall back to loading the first screenful and nothing more,
+    // rather than silently loading everything.
+    targets.slice(0, 12).forEach((target) => loader.request(target.idx));
+    return;
+  }
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) {
+          continue;
+        }
+        observer.unobserve(entry.target);
+        const idx = (entry.target as HTMLElement).dataset.mtIdx;
+        if (idx) {
+          loader.request(idx);
+        }
+      }
+      if (loader.stopped) {
+        observer.disconnect();
+      }
+    },
+    {rootMargin: PRELOAD_MARGIN}
+  );
+
+  for (const target of targets) {
+    target.row.dataset.mtIdx = target.idx;
+    observer.observe(target.row);
+  }
+
+  // Sorting reorders rows, which can bring unloaded ones on screen; the
+  // observer handles that on its own. Requesting the whole page is available
+  // through the overview, which shows progress and can be cancelled.
+  document.addEventListener(REQUEST_ALL_EVENT, () => {
+    for (const target of targets) {
+      loader.request(target.idx);
     }
   });
-
-  document.dispatchEvent(new CustomEvent(PLAY_INFO_READY_EVENT));
 }

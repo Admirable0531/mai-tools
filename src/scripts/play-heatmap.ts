@@ -25,6 +25,7 @@ import {
   LOCKED_REASON,
   lockedOutFor,
   noteLockedOut,
+  readCache,
   toEpochTime,
 } from '../common/play-info-fetch';
 import {getSongIdx} from '../common/song-name-helper';
@@ -74,6 +75,13 @@ const UIString = {
     legendLess: 'fewer',
     legendMore: 'more',
     legendPeak: (n: number) => `(busiest day: ${n})`,
+    scanCost: (songs: number, minutes: number) =>
+      `${songs} songs still need loading. maimai limits how fast it can be asked, ` +
+      `so this takes about ${minutes} minute${minutes === 1 ? '' : 's'}. ` +
+      'It is cached afterwards, and closing this panel stops it.',
+    startScan: 'Load them',
+    cancelScan: 'Not now',
+    scanDeclined: 'Cancelled. Nothing was loaded.',
     lockedOut: (minutes: number) =>
       `maimai DX NET locked the connection after too many requests. ` +
       `Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`,
@@ -101,6 +109,12 @@ const UIString = {
     legendLess: '少',
     legendMore: '多',
     legendPeak: (n: number) => `(單日最多 ${n})`,
+    scanCost: (songs: number, minutes: number) =>
+      `還有 ${songs} 首需要載入。maimai 限制請求速度，大約需要 ${minutes} 分鐘。` +
+      '載入後會快取，關閉此視窗即可停止。',
+    startScan: '開始載入',
+    cancelScan: '暫時不要',
+    scanDeclined: '已取消，未載入任何資料。',
     lockedOut: (minutes: number) =>
       `因短時間內存取過多，maimai DX NET 已鎖定連線。請約 ${minutes} 分鐘後再試。`,
   },
@@ -127,6 +141,12 @@ const UIString = {
     legendLess: '적음',
     legendMore: '많음',
     legendPeak: (n: number) => `(최다 ${n}개)`,
+    scanCost: (songs: number, minutes: number) =>
+      `${songs}곡을 더 불러와야 합니다. maimai가 요청 속도를 제한하므로 약 ${minutes}분 걸립니다. ` +
+      '불러온 뒤에는 캐시되며, 이 창을 닫으면 중단됩니다.',
+    startScan: '불러오기',
+    cancelScan: '나중에',
+    scanDeclined: '취소했습니다. 아무것도 불러오지 않았습니다.',
     lockedOut: (minutes: number) =>
       `요청이 많아 maimai DX NET이 접속을 차단했습니다. 약 ${minutes}분 후에 다시 시도해 주세요.`,
   },
@@ -574,6 +594,55 @@ function createPanel(onClose?: () => void): {
   return {panel, body, close};
 }
 
+/** Observed safe pacing, used only to give the user an honest estimate. */
+const SECONDS_PER_SONG = 0.75;
+
+/**
+ * Shows what the scan will cost and waits for an answer. Resolves true to go
+ * ahead, false if the user declines or closes the panel.
+ */
+function confirmScan(body: HTMLElement, status: HTMLElement, songs: number): Promise<boolean> {
+  const minutes = Math.max(1, Math.round((songs * SECONDS_PER_SONG) / 60));
+  status.textContent = UIString.scanCost(songs, minutes);
+  status.style.color = '#333';
+
+  const buttons = el('div', {display: 'flex', gap: '8px', margin: '10px 0'});
+  const start = el('button', {
+    padding: '6px 14px',
+    borderRadius: '4px',
+    border: '1px solid #ccc',
+    background: '#fff',
+    cursor: 'pointer',
+    fontSize: '12px',
+  });
+  start.type = 'button';
+  start.textContent = UIString.startScan;
+  const cancel = el('button', {
+    padding: '6px 14px',
+    borderRadius: '4px',
+    border: 'none',
+    background: '#eee',
+    cursor: 'pointer',
+    fontSize: '12px',
+  });
+  cancel.type = 'button';
+  cancel.textContent = UIString.cancelScan;
+  buttons.append(start, cancel);
+  body.append(buttons);
+
+  return new Promise<boolean>((resolve) => {
+    start.addEventListener('click', () => {
+      buttons.remove();
+      resolve(true);
+    });
+    cancel.addEventListener('click', () => {
+      buttons.remove();
+      status.textContent = UIString.scanDeclined;
+      resolve(false);
+    });
+  });
+}
+
 let running = false;
 
 async function showOverview(): Promise<void> {
@@ -610,6 +679,18 @@ async function showOverview(): Promise<void> {
         group.push(chart);
       } else {
         bySong.set(chart.idx, [chart]);
+      }
+    }
+
+    // maimai only tolerates about one request every 0.7s, so a first scan of a
+    // full library is minutes, not seconds. Say so and let the user decide,
+    // rather than quietly tying up their connection — and skip the prompt when
+    // the cache already covers everything.
+    const uncached = Array.from(bySong.keys()).filter((idx) => !readCache(idx)).length;
+    if (uncached > 0) {
+      const confirmed = await confirmScan(body, status, uncached);
+      if (!confirmed || cancelled) {
+        return;
       }
     }
 

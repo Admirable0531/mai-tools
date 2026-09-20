@@ -11,10 +11,12 @@ The purpose of this document is to list features to check when major code change
 - Single play record: DX score percentage and chart level should be displayed.
 - Single play record: can analyze score in classic-layout.
 - Self score sorting: by achievement, by ap/fc, by sync, by official level, by internal level, by dx star.
-- Self score list: each played chart gets a play count and last played date; unplayed charts get neither
-  and cost no request. Reloading the page fills them in from cache without re-fetching.
-- Self score sorting: by play count, by last played — including picking one of those before the values
-  have finished loading, which should re-sort itself once they arrive.
+- Self score list: play count and last played date appear on played charts as you SCROLL to them,
+  about one song per second — never the whole page at once, which is what maimai rate limits
+  (ERROR CODE 200001). Unplayed charts get neither, and cost no request. Reloading fills in from
+  cache without re-fetching.
+- Self score sorting: by play count, by last played. Choosing one of these opts in to loading the
+  rest of the page, and the order should refresh as the values arrive.
 - Self score list: "Last played overview" button opens a panel with a calendar heatmap (scrolled to the
   recent end, month labels along the top), a level × recency grid, and a longest-untouched list.
   Re-opening it should be near-instant, since the song data is already cached.

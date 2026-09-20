@@ -19,7 +19,12 @@ import {
   getOfficialLevel,
 } from '../common/level-helper';
 import {fetchGameVersion, fetchPage} from '../common/net-helpers';
-import {LAST_PLAYED_ATTR, PLAY_COUNT_ATTR, PLAY_INFO_READY_EVENT} from '../common/play-info';
+import {
+  LAST_PLAYED_ATTR,
+  PLAY_COUNT_ATTR,
+  PLAY_INFO_READY_EVENT,
+  REQUEST_ALL_EVENT,
+} from '../common/play-info';
 import {fetchSongGenre, getCachedSongGenre, getSongIdx} from '../common/song-name-helper';
 import {loadSongDatabase, SongDatabase, SongProperties} from '../common/song-props';
 
@@ -714,7 +719,15 @@ type Cache = {
     const select = d.createElement('select');
     select.className = 'w_300 m_10';
     select.addEventListener('change', (evt: Event) => {
-      performSort((evt.target as HTMLSelectElement).value as SortBy);
+      const sortBy = (evt.target as HTMLSelectElement).value as SortBy;
+      // Play data loads only for rows scrolled into view, because asking for a
+      // whole page at once is what maimai rate limits. These sorts need every
+      // row to mean anything, so choosing one is the opt-in to load the rest;
+      // the order refreshes as the values arrive.
+      if (isPlaySort(sortBy)) {
+        d.dispatchEvent(new CustomEvent(REQUEST_ALL_EVENT));
+      }
+      performSort(sortBy);
     });
     select.append(createOption(SortBy.None));
     select.append(createOption(SortBy.RankAsc));
@@ -744,6 +757,15 @@ type Cache = {
     select.append(createOption(SortBy.LastPlayedDes));
     div.append(select);
     return div;
+  }
+
+  function isPlaySort(sortBy: SortBy): boolean {
+    return (
+      sortBy === SortBy.PlayCountAsc ||
+      sortBy === SortBy.PlayCountDes ||
+      sortBy === SortBy.LastPlayedAsc ||
+      sortBy === SortBy.LastPlayedDes
+    );
   }
 
   // play-last stamps these on the row, so sorting never has to re-parse the
@@ -828,12 +850,7 @@ type Cache = {
     d.addEventListener(PLAY_INFO_READY_EVENT, () => {
       const select = d.getElementById('scoreSortContainer')?.querySelector('select');
       const sortBy = select?.value as SortBy;
-      if (
-        sortBy === SortBy.PlayCountAsc ||
-        sortBy === SortBy.PlayCountDes ||
-        sortBy === SortBy.LastPlayedAsc ||
-        sortBy === SortBy.LastPlayedDes
-      ) {
+      if (isPlaySort(sortBy)) {
         performSort(sortBy);
       }
     });

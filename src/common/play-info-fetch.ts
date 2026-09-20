@@ -19,16 +19,18 @@ const CACHE_PREFIX = 'MaiToolsPlayInfo2:';
 const CACHE_DURATION = 1000 * 60 * 60 * 6;
 
 /**
- * Pacing. maimai DX NET locks the connection outright when it decides you are
- * asking too often, and the lock costs minutes — far more than any pacing
- * saves. These add up to roughly 5 requests/second, in the same range as the
- * original batched version, and the savings now come from asking for less
- * (unplayed charts skipped, one request per song, results cached) rather than
- * from asking faster.
+ * Pacing. maimai DX NET answers with ERROR CODE 200001 — "too many access
+ * within a short period, the connection has been locked" — and it takes very
+ * little to provoke. One request at a time, spaced out, is the only setting
+ * observed not to trip it.
+ *
+ * Rate is only half of it: a level page holds 150-200 played charts, and
+ * asking for all of them trips the lock at any rate that finishes in
+ * reasonable time. That is why callers load on demand rather than up front.
  */
-const MAX_CONCURRENCY = 3;
+const MAX_CONCURRENCY = 1;
 /** Minimum spacing between request starts, always applied. */
-const BASE_GAP_MS = 200;
+const BASE_GAP_MS = 700;
 /** Extra spacing once the site does push back, on top of the base gap. */
 const MAX_BACKOFF_MS = 5000;
 const MAX_ATTEMPTS = 3;
@@ -109,9 +111,16 @@ class Backoff {
   }
 }
 
+/**
+ * One throttle for the whole page. The row annotation and the overview can be
+ * in flight at the same time, and two independent throttles would each think
+ * they were being polite while together doubling the rate.
+ */
+const sharedBackoff = new Backoff();
+
 /** Shared across the worker pool: the throttle, plus the give-up-entirely switch. */
 class RunState {
-  readonly backoff = new Backoff();
+  readonly backoff = sharedBackoff;
   aborted = false;
   abortReason = '';
   private consecutiveFailures = 0;
@@ -395,4 +404,89 @@ export async function fetchSongPlayInfo(
       (run.aborted ? ' (stopped early)' : '')
   );
   return {fetched: done, cached, abortReason: run.abortReason};
+}
+
+/**
+ * A queue for loading songs one at a time, as they turn out to be needed.
+ *
+ * The score list is the reason this exists. Fetching every played chart on the
+ * page up front is 150-200 requests, which trips maimai's lock at any rate
+ * that finishes in reasonable time — so the annotation asks only for rows the
+ * viewer actually scrolls to, and this spreads those requests out behind the
+ * shared throttle. Cache hits are answered immediately without queueing.
+ */
+export class PlayInfoLoader {
+  private readonly queue: string[] = [];
+  private readonly requested = new Set<string>();
+  private readonly run = new RunState();
+  private draining = false;
+
+  constructor(
+    private readonly onSong: (idx: string, info: SongPlayInfo) => void,
+    private readonly onIdle?: () => void
+  ) {}
+
+  get stopped(): boolean {
+    return this.run.aborted;
+  }
+
+  get stopReason(): string {
+    return this.run.abortReason;
+  }
+
+  /** Number of songs still waiting to be fetched. */
+  get pending(): number {
+    return this.queue.length;
+  }
+
+  /** Ask for a song. Cached answers come back before this returns. */
+  request(idx: string): void {
+    if (this.requested.has(idx)) {
+      return;
+    }
+    this.requested.add(idx);
+    const hit = readCache(idx);
+    if (hit) {
+      this.onSong(idx, hit);
+      return;
+    }
+    this.queue.push(idx);
+    void this.drain();
+  }
+
+  /** Give up on anything not yet fetched. */
+  cancel(reason = 'cancelled'): void {
+    this.queue.length = 0;
+    this.run.abortRun(reason);
+  }
+
+  private async drain(): Promise<void> {
+    if (this.draining) {
+      return;
+    }
+    this.draining = true;
+    try {
+      while (this.queue.length && !this.run.aborted) {
+        const remaining = lockedOutFor();
+        if (remaining > 0) {
+          this.run.abortRun(
+            `${LOCKED_REASON}; waiting ${Math.ceil(remaining / 60000)} more minute(s)`
+          );
+          break;
+        }
+        // Shift rather than pop: rows asked for first are the ones on screen.
+        const idx = this.queue.shift();
+        const info = await fetchOne(idx, this.run);
+        if (info) {
+          writeCache(idx, info);
+          this.onSong(idx, info);
+        }
+      }
+    } finally {
+      this.draining = false;
+      if (!this.queue.length) {
+        this.onIdle?.();
+      }
+    }
+  }
 }

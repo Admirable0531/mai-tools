@@ -19,7 +19,14 @@ import {getChartLevel, getSongName} from '../common/fetch-score-util';
 import {SELF_SCORE_URLS} from '../common/fetch-self-score';
 import {getInitialLanguage, Language} from '../common/lang';
 import {fetchPage} from '../common/net-helpers';
-import {fetchSongPlayInfo, toEpochTime} from '../common/play-info-fetch';
+import {
+  fetchSongPlayInfo,
+  isLockedPage,
+  LOCKED_REASON,
+  lockedOutFor,
+  noteLockedOut,
+  toEpochTime,
+} from '../common/play-info-fetch';
 import {getSongIdx} from '../common/song-name-helper';
 
 const DAY_MS = 86400000;
@@ -67,6 +74,9 @@ const UIString = {
     legendLess: 'fewer',
     legendMore: 'more',
     legendPeak: (n: number) => `(busiest day: ${n})`,
+    lockedOut: (minutes: number) =>
+      `maimai DX NET locked the connection after too many requests. ` +
+      `Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`,
   },
   [Language.zh_TW]: {
     button: '📊 最後遊玩總覽',
@@ -91,6 +101,8 @@ const UIString = {
     legendLess: '少',
     legendMore: '多',
     legendPeak: (n: number) => `(單日最多 ${n})`,
+    lockedOut: (minutes: number) =>
+      `因短時間內存取過多，maimai DX NET 已鎖定連線。請約 ${minutes} 分鐘後再試。`,
   },
   [Language.ko_KR]: {
     button: '📊 최종 플레이 개요',
@@ -115,6 +127,8 @@ const UIString = {
     legendLess: '적음',
     legendMore: '많음',
     legendPeak: (n: number) => `(최다 ${n}개)`,
+    lockedOut: (minutes: number) =>
+      `요청이 많아 maimai DX NET이 접속을 차단했습니다. 약 ${minutes}분 후에 다시 시도해 주세요.`,
   },
 }[getInitialLanguage()];
 
@@ -171,6 +185,13 @@ async function collectPlayedCharts(onStatus: (text: string) => void): Promise<Ch
     } catch (e) {
       console.warn('[play-heatmap] could not load score page', url, e);
       continue;
+    }
+    // These five pages can hit the lock too, and it arrives as an ordinary 200.
+    // Without this the scan would report "no played charts" instead of saying
+    // what actually happened.
+    if (isLockedPage(dom.body?.textContent ?? '')) {
+      noteLockedOut();
+      throw new Error(LOCKED_REASON);
     }
     const rows = Array.from(dom.querySelectorAll<HTMLElement>('.main_wrapper.t_c .w_450.m_15.f_0'));
     for (const row of rows) {
@@ -487,7 +508,11 @@ function drawStaleList(charts: ChartRow[], now: number): HTMLElement {
 
 // --------------------------------------------------------------------- panel
 
-function createPanel(): {panel: HTMLElement; body: HTMLElement; close: () => void} {
+function createPanel(onClose?: () => void): {
+  panel: HTMLElement;
+  body: HTMLElement;
+  close: () => void;
+} {
   const backdrop = el('div', {
     position: 'fixed',
     inset: '0',
@@ -534,7 +559,10 @@ function createPanel(): {panel: HTMLElement; body: HTMLElement; close: () => voi
   panel.append(body);
   backdrop.append(panel);
 
-  const close = () => backdrop.remove();
+  const close = () => {
+    backdrop.remove();
+    onClose?.();
+  };
   closeButton.addEventListener('click', close);
   backdrop.addEventListener('click', (evt) => {
     if (evt.target === backdrop) {
@@ -553,9 +581,20 @@ async function showOverview(): Promise<void> {
     return;
   }
   running = true;
-  const {body} = createPanel();
+  // Closing the panel stops the scan. It can run for a couple of minutes, and
+  // leaving it going against a site that rate limits is the last thing we want.
+  let cancelled = false;
+  const {body} = createPanel(() => (cancelled = true));
   const status = el('p', {margin: '10px 0', color: '#666'}, UIString.scanning);
   body.append(status);
+
+  const lockedFor = lockedOutFor();
+  if (lockedFor > 0) {
+    status.textContent = UIString.lockedOut(Math.ceil(lockedFor / 60000));
+    status.style.color = '#b00';
+    running = false;
+    return;
+  }
 
   try {
     const charts = await collectPlayedCharts((text) => (status.textContent = text));
@@ -585,8 +624,12 @@ async function showOverview(): Promise<void> {
           }
         }
       },
-      (done, total) => (status.textContent = UIString.fetching(done, total))
+      (done, total) => (status.textContent = UIString.fetching(done, total)),
+      () => cancelled
     );
+    if (cancelled) {
+      return;
+    }
 
     const now = Date.now();
     body.textContent = '';

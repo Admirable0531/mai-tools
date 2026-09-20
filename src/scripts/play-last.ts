@@ -3,7 +3,7 @@
 // with the last-played overview.
 
 import {LAST_PLAYED_ATTR, PLAY_COUNT_ATTR, PLAY_INFO_READY_EVENT} from '../common/play-info';
-import {fetchSongPlayInfo, PlayInfo, toEpochTime} from '../common/play-info-fetch';
+import {fetchSongPlayInfo, lockedOutFor, PlayInfo, toEpochTime} from '../common/play-info-fetch';
 import {getSongIdx} from '../common/song-name-helper';
 
 // The look of a score block lives entirely in maimai's own .music_score_block
@@ -122,6 +122,15 @@ export async function addPlayAndLastPlayedInfo(document: Document): Promise<void
   const targets = collectTargets(document);
   if (!targets.length) {
     return;
+  }
+  // This runs on every score page load, so it is the thing most likely to walk
+  // straight back into a lock. Cached rows below still get annotated.
+  const lockedFor = lockedOutFor();
+  if (lockedFor > 0) {
+    console.warn(
+      `[play-last] not fetching for another ${Math.ceil(lockedFor / 60000)} minute(s): ` +
+        'maimai DX NET locked the connection recently'
+    );
   }
 
   // One request per song, not per row: rows for two difficulties of the same

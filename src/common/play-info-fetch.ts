@@ -11,18 +11,24 @@ import {addToCache} from './cache';
 import {getEpochTimeFromText} from './net-helpers';
 
 const DETAIL_URL = '/maimai-mobile/record/musicDetail/';
-const CACHE_PREFIX = 'MaiToolsPlayInfo:';
+// Version suffix: an earlier build cached empty results when the site was
+// refusing requests, and those entries would otherwise keep rows blank until
+// they expired. Bumping the prefix abandons them.
+const CACHE_PREFIX = 'MaiToolsPlayInfo2:';
 /** Play count and last-played only change when you actually play, so a few hours is safe. */
 const CACHE_DURATION = 1000 * 60 * 60 * 6;
 
-/** How many detail pages may be in flight at once. */
-const MAX_CONCURRENCY = 4;
 /**
- * Minimum spacing between request starts, always applied. Firing a pool flat
- * out is what gets the site to start refusing, and being refused is far slower
- * than pacing ourselves.
+ * Pacing. maimai DX NET locks the connection outright when it decides you are
+ * asking too often, and the lock costs minutes — far more than any pacing
+ * saves. These add up to roughly 5 requests/second, in the same range as the
+ * original batched version, and the savings now come from asking for less
+ * (unplayed charts skipped, one request per song, results cached) rather than
+ * from asking faster.
  */
-const BASE_GAP_MS = 100;
+const MAX_CONCURRENCY = 3;
+/** Minimum spacing between request starts, always applied. */
+const BASE_GAP_MS = 200;
 /** Extra spacing once the site does push back, on top of the base gap. */
 const MAX_BACKOFF_MS = 5000;
 const MAX_ATTEMPTS = 3;
@@ -32,6 +38,19 @@ const MAX_ATTEMPTS = 3;
  * most of the work undone.
  */
 const MAX_CONSECUTIVE_FAILURES = 20;
+
+/**
+ * maimai's "too many access ... the connection has been locked" page. It comes
+ * back as a perfectly ordinary 200 with no redirect, so nothing but its text
+ * distinguishes it from a real detail page — and treating it as a success is
+ * how a run ends up hammering a site that has already said no.
+ */
+const LOCKED_PAGE =
+  /too many access|connection has been locked|アクセスが集中|ロックされ|접속이 많아|連線已被鎖定|连接已被锁定/i;
+const LOCKOUT_KEY = 'MaiToolsPlayInfoLockedUntil';
+/** How long to stay away after being locked out, so page loads stop re-triggering it. */
+const LOCKOUT_MS = 10 * 60 * 1000;
+export const LOCKED_REASON = 'maimai DX NET locked the connection (too many requests)';
 
 export type PlayInfo = {count: number; lastPlayed: string};
 /** Every difficulty of one song, keyed by the detail page's section id. */
@@ -116,6 +135,38 @@ class RunState {
   }
 }
 
+/**
+ * True when this page is maimai's "connection has been locked" notice rather
+ * than the page we asked for. Callers that fetch pages outside this module
+ * need it too, since the notice arrives as an ordinary 200.
+ */
+export function isLockedPage(text: string): boolean {
+  return LOCKED_PAGE.test(text);
+}
+
+/** Records the lockout so other entry points stop asking as well. */
+export function noteLockedOut(): void {
+  markLockedOut();
+}
+
+/** Milliseconds left on a self-imposed lockout, or 0 when there is none. */
+export function lockedOutFor(): number {
+  try {
+    const until = parseInt(window.localStorage.getItem(LOCKOUT_KEY), 10);
+    return isNaN(until) ? 0 : Math.max(0, until - Date.now());
+  } catch (e) {
+    return 0;
+  }
+}
+
+function markLockedOut(): void {
+  try {
+    window.localStorage.setItem(LOCKOUT_KEY, String(Date.now() + LOCKOUT_MS));
+  } catch (e) {
+    // Without the record we just risk asking again too soon.
+  }
+}
+
 export function readCache(idx: string): SongPlayInfo | null {
   try {
     const raw = window.localStorage.getItem(CACHE_PREFIX + idx);
@@ -133,15 +184,28 @@ export function readCache(idx: string): SongPlayInfo | null {
   }
 }
 
-function clearCache(): void {
+function clearByPrefix(prefix: string): void {
   const keys: string[] = [];
   for (let i = 0; i < window.localStorage.length; i++) {
     const key = window.localStorage.key(i);
-    if (key?.startsWith(CACHE_PREFIX)) {
+    if (key?.startsWith(prefix)) {
       keys.push(key);
     }
   }
   keys.forEach((key) => window.localStorage.removeItem(key));
+}
+
+function clearCache(): void {
+  clearByPrefix(CACHE_PREFIX);
+}
+
+// One-time sweep of the previous cache generation, whose entries could be
+// empty results recorded while the site was refusing requests. Leaving them
+// would waste quota for hours and teach nobody anything.
+try {
+  clearByPrefix('MaiToolsPlayInfo:');
+} catch (e) {
+  // Storage unavailable; nothing to sweep.
 }
 
 function writeCache(idx: string, info: SongPlayInfo): void {
@@ -222,13 +286,25 @@ async function fetchOne(idx: string, run: RunState): Promise<SongPlayInfo | null
         run.recordFailure();
         continue;
       }
-      const info = parseDetailPage(await res.text());
-      // Landed somewhere with no difficulty sections at all: the session is
-      // gone and we are looking at the login or error page. More requests will
-      // not fix that.
-      if (!Object.keys(info).length && res.redirected) {
-        run.abortRun('the session has expired — log in to maimai DX NET again');
+      const html = await res.text();
+      // Check this BEFORE parsing: the lock page is a 200 with no redirect, so
+      // it parses to an empty result that would otherwise look like success.
+      if (LOCKED_PAGE.test(html)) {
+        markLockedOut();
+        run.abortRun(LOCKED_REASON);
         return null;
+      }
+      const info = parseDetailPage(html);
+      // No difficulty sections at all: the login page, an error page, or
+      // something else we cannot read. Never a real detail page, so never a
+      // success — and never cached, or the row stays blank for hours.
+      if (!Object.keys(info).length) {
+        if (res.redirected) {
+          run.abortRun('the session has expired — log in to maimai DX NET again');
+          return null;
+        }
+        run.recordFailure();
+        continue;
       }
       run.recordSuccess();
       return info;
@@ -259,7 +335,8 @@ export type FetchResult = {
 export async function fetchSongPlayInfo(
   idxs: string[],
   onSong: (idx: string, info: SongPlayInfo) => void,
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  shouldStop?: () => boolean
 ): Promise<FetchResult> {
   const pending: string[] = [];
   let cached = 0;
@@ -278,6 +355,16 @@ export async function fetchSongPlayInfo(
     return {fetched: 0, cached, abortReason: ''};
   }
 
+  // Still serving out a lockout: cached rows are already shown, and asking
+  // again now is what keeps the lock alive.
+  const remaining = lockedOutFor();
+  if (remaining > 0) {
+    const minutes = Math.ceil(remaining / 60000);
+    const reason = `${LOCKED_REASON}; waiting ${minutes} more minute${minutes === 1 ? '' : 's'}`;
+    console.warn(`[play-info] skipping: ${reason}`);
+    return {fetched: 0, cached, abortReason: reason};
+  }
+
   const run = new RunState();
   const startedAt = Date.now();
   let next = 0;
@@ -286,6 +373,10 @@ export async function fetchSongPlayInfo(
   // through, instead of stalling on the slowest response in each batch.
   const workers = Array.from({length: Math.min(MAX_CONCURRENCY, pending.length)}, async () => {
     while (next < pending.length && !run.aborted) {
+      if (shouldStop?.()) {
+        run.abortRun('cancelled');
+        break;
+      }
       const idx = pending[next++];
       const info = await fetchOne(idx, run);
       done++;

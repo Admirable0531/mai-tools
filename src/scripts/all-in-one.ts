@@ -46,6 +46,9 @@ import {handleError} from '../common/util';
         console.error(err);
         handleError(UIString.playInfoFailed);
       });
+    import('./play-heatmap')
+      .then((m) => m.addLastPlayedOverviewButton(d))
+      .catch((err) => console.error(err));
   } else if (path.startsWith('/maimai-mobile/friend/')) {
     import('./analyze-friend-rating-in-new-tab');
     if (path.startsWith('/maimai-mobile/friend/friendDetail/')) {

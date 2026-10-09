@@ -9,6 +9,9 @@ import {BasicSongProps} from './song-props';
 export const ALLOWED_ORIGINS = [
   'https://cdpn.io',
   'https://myjian.github.io',
+  // This fork's own Pages site: without it the maimai NET scripts ignore the
+  // fork's rating calculator and never send it any scores.
+  'https://admirable0531.github.io',
   'http://localhost:8080',
 ];
 

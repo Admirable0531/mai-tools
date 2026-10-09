@@ -1,5 +1,3 @@
-import React from 'react';
-
 import {ChartType} from '../common/chart-type';
 import {Difficulty, getDifficultyClassName, getDifficultyName} from '../common/difficulties';
 import {getSongNickname} from '../common/song-name-helper';
@@ -34,13 +32,13 @@ export function ChartRecordTable(props: Props) {
     progress[0]
       .concat(progress[1])
       .filter((r) => r.chartType === ChartType.DX)
-      .map((r) => getSongNickname(r.songName, r.genre))
+      .map((r) => getSongNickname(r.songName, r.genre)),
   );
   const playedStdSongs = new Set(
     progress[0]
       .concat(progress[1])
       .filter((r) => r.chartType === ChartType.STANDARD)
-      .map((r) => getSongNickname(r.songName, r.genre))
+      .map((r) => getSongNickname(r.songName, r.genre)),
   );
   const unplayedDxSongs = (
     props.d === Difficulty.ReMASTER

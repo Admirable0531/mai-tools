@@ -1,4 +1,4 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import {useCallback, useMemo, useState} from 'react';
 
 import {FullChartRecord} from '../common/chart-record';
 import {ChartType} from '../common/chart-type';
@@ -18,13 +18,10 @@ export function PlateProgressDetail(props: Props) {
   const {versionInfo, playerScores} = props;
   const [plateType, setPlateType] = useState<PlateType | null>(null);
   const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty | null>(null);
-  const handleSelectPlateAndDifficulty = useCallback(
-    (plate: PlateType, d: Difficulty) => {
-      setPlateType(plate);
-      setSelectedDifficulty(d);
-    },
-    [plateType, selectedDifficulty]
-  );
+  const handleSelectPlateAndDifficulty = useCallback((plate: PlateType, d: Difficulty) => {
+    setPlateType(plate);
+    setSelectedDifficulty(d);
+  }, []);
   const allSongs = {
     dx: new Set(versionInfo.dx_songs),
     std: new Set(versionInfo.std_songs),
@@ -42,10 +39,13 @@ export function PlateProgressDetail(props: Props) {
     [Difficulty.UTAGE]: 0,
   };
   const progressByPlate: Record<PlateType, ProgressByDifficulty> = useMemo(() => {
-    const result = Object.keys(versionInfo.plate_name).reduce((res, plateType) => {
-      res[plateType as PlateType] = createEmptyProgress();
-      return res;
-    }, {} as Record<PlateType, ProgressByDifficulty>);
+    const result = Object.keys(versionInfo.plate_name).reduce(
+      (res, plateType) => {
+        res[plateType as PlateType] = createEmptyProgress();
+        return res;
+      },
+      {} as Record<PlateType, ProgressByDifficulty>,
+    );
     playerScores
       .filter((record) => {
         const nickname = getSongNickname(record.songName, record.genre);
@@ -80,6 +80,8 @@ export function PlateProgressDetail(props: Props) {
         activeDifficulties={activeDifficulties}
         songCount={songCount}
         progressByPlate={progressByPlate}
+        selectedDifficulty={selectedDifficulty}
+        selectedPlateType={plateType}
         plateNames={versionInfo.plate_name}
         selectPlateAndDifficulty={handleSelectPlateAndDifficulty}
       />

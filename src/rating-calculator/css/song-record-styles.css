@@ -30,7 +30,6 @@
 
 .scoreRecordCell {
   padding: 2px 4px;
-  font-weight: bold;
   font-size: 1rem;
 }
 
@@ -88,7 +87,7 @@ td.achievementCell {
 }
 
 td.nextRatingCell {
-  text-align: left;
+  text-align: center;
 }
 
 td.chartTypeCell,

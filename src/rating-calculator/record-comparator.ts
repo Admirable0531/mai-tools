@@ -1,8 +1,7 @@
 import {ChartRecord} from '../common/chart-record';
-import {RankDef} from '../common/rank-functions';
 import {ChartRecordWithRating} from './types';
 
-type RecordNumberProp = 'rating' | 'level' | 'achievement';
+type RecordNumberProp = 'rating' | 'level' | 'achievement' | 'version';
 type RecordStringProp = 'songName';
 
 function compareNumbers(x: number, y: number) {
@@ -16,14 +15,14 @@ function compareSongsByStrAttr(a: ChartRecord, b: ChartRecord, f: RecordStringPr
 function compareSongsByNumAttr(
   a: ChartRecordWithRating,
   b: ChartRecordWithRating,
-  f: RecordNumberProp
+  f: RecordNumberProp,
 ) {
   return compareNumbers(a[f], b[f]);
 }
 
 export function compareSongsByRating(
   record1: ChartRecordWithRating,
-  record2: ChartRecordWithRating
+  record2: ChartRecordWithRating,
 ) {
   return (
     compareSongsByNumAttr(record1, record2, 'rating') ||
@@ -34,10 +33,10 @@ export function compareSongsByRating(
 
 export function compareCandidate(
   record1: ChartRecordWithRating,
-  record2: ChartRecordWithRating
+  record2: ChartRecordWithRating,
 ): number {
-  const nextRating1 = record1.nextRanks.values().next().value;
-  const nextRating2 = record2.nextRanks.values().next().value;
+  const nextRating1 = record1.target;
+  const nextRating2 = record2.target;
   if (!nextRating1 && !nextRating2) {
     return 0;
   } else if (!nextRating1) {
@@ -47,33 +46,46 @@ export function compareCandidate(
     // Put record1 first
     return -1;
   }
-  const costPerformance1 = nextRating1.minRt / (nextRating1.rank.minAchv - record1.achievement);
-  const costPerformance2 = nextRating2.minRt / (nextRating2.rank.minAchv - record2.achievement);
+  const costPerformance1 = nextRating1.delta / nextRating1.cost;
+  const costPerformance2 = nextRating2.delta / nextRating2.cost;
   return (
     compareNumbers(costPerformance1, costPerformance2) ||
-    compareNumbers(nextRating1.minRt, nextRating2.minRt) ||
+    compareNumbers(nextRating1.delta, nextRating2.delta) ||
     compareSongsByNumAttr(record1, record2, 'level')
   );
 }
 
 export function compareSongsByNextRating(
   record1: ChartRecordWithRating,
-  record2: ChartRecordWithRating
+  record2: ChartRecordWithRating,
 ) {
-  const nextRating1 = record1.nextRanks.values().next().value;
-  const nextRating2 = record2.nextRanks.values().next().value;
+  const nextRating1 = record1.target;
+  const nextRating2 = record2.target;
+  if (!nextRating1 || !nextRating2) {
+    return 0;
+  }
   return (
-    compareNumbers(nextRating1.minRt, nextRating2.minRt) ||
+    compareNumbers(nextRating1.delta, nextRating2.delta) ||
     compareSongsByNumAttr(record1, record2, 'level')
   );
 }
 
 export function compareSongsByLevel(
   record1: ChartRecordWithRating,
-  record2: ChartRecordWithRating
+  record2: ChartRecordWithRating,
 ) {
   // smaller first
   return compareSongsByNumAttr(record2, record1, 'level');
+}
+
+export function compareSongsByVersion(
+  record1: ChartRecordWithRating,
+  record2: ChartRecordWithRating,
+) {
+  // for charts in the same version, sort by chart type
+  return (
+    compareSongsByNumAttr(record2, record1, 'version') || compareSongsByChartType(record2, record1)
+  );
 }
 
 export function compareSongsByAchv(record1: ChartRecordWithRating, record2: ChartRecordWithRating) {
@@ -84,18 +96,24 @@ export function compareSongsByName(record1: ChartRecord, record2: ChartRecord) {
   return compareSongsByStrAttr(record1, record2, 'songName');
 }
 
-export function compareSongsByNextRank(
-  record1: ChartRecordWithRating,
-  record2: ChartRecordWithRating
-) {
-  const nextRank1: RankDef = record1.nextRanks.values().next().value.rank;
-  const nextRank2: RankDef = record2.nextRanks.values().next().value.rank;
-  return compareNumbers(nextRank1.minAchv, nextRank2.minAchv);
+export function compareSongsByRank(record1: ChartRecordWithRating, record2: ChartRecordWithRating) {
+  if (record1.rankTitle.includes('AP') && record2.rankTitle.includes('AP')) {
+    return compareSongsByAchv(record1, record2);
+  } else if (record1.rankTitle.includes('AP')) {
+    return -1;
+  } else if (record2.rankTitle.includes('AP')) {
+    return 1;
+  } else {
+    return (
+      compareSongsByNumAttr(record1, record2, 'achievement') ||
+      compareSongsByNumAttr(record1, record2, 'level')
+    );
+  }
 }
 
 export function compareSongsByChartType(
   record1: ChartRecordWithRating,
-  record2: ChartRecordWithRating
+  record2: ChartRecordWithRating,
 ) {
   const type1 = record1.chartType;
   const type2 = record2.chartType;

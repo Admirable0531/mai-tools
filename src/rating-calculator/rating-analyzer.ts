@@ -2,6 +2,7 @@ import {ChartRecord} from '../common/chart-record';
 import {ChartType} from '../common/chart-type';
 import {GameRegion} from '../common/game-region';
 import {GameVersion} from '../common/game-version';
+import {getRankTitle} from '../common/rank-functions';
 import {getRating} from '../common/rating-functions';
 import {getRemovedSongs} from '../common/removed-songs';
 import {SongDatabase, SongProperties} from '../common/song-props';
@@ -16,19 +17,39 @@ export const NUM_TOP_OLD_CHARTS = 35;
  * If we don't find the inner level for the chart, use its estimated level and move on.
  */
 function getRecordWithRating(
+  gameVer: GameVersion,
   record: ChartRecord,
-  songProps?: SongProperties
+  songProps?: SongProperties,
 ): ChartRecordWithRating {
+  let version = -1;
   if (songProps) {
+    version = songProps.debut;
     const lv = songProps.lv[record.difficulty];
     if (typeof lv === 'number') {
       record.level = Math.abs(lv);
     }
   }
+  const baseRating = getRating(record.level, record.achievement);
+  const bonusPoint =
+    gameVer >= GameVersion.CiRCLE && record.fcap && record.fcap.includes('AP') ? 1 : 0;
   return {
     ...record,
-    rating: getRating(record.level, record.achievement),
+    version,
+    rankTitle: bonusPoint ? record.fcap : getRankTitle(record.achievement),
+    rating: baseRating + bonusPoint,
   };
+}
+
+export function isNewChart(
+  record: ChartRecord,
+  songProps: SongProperties | undefined | null,
+  gameVer: GameVersion,
+  includePreviousVerInNewCharts: boolean,
+): boolean {
+  if (!songProps) return record.chartType === ChartType.DX;
+  if (songProps.debut === gameVer) return true;
+  if (includePreviousVerInNewCharts) return songProps.debut === gameVer - 1;
+  return false;
 }
 
 /**
@@ -38,12 +59,14 @@ function getRecordWithRating(
 export function analyzePlayerRating(
   songDb: SongDatabase,
   date: Date,
-  playerName: string,
+  playerName: string | undefined | null,
   playerScores: ReadonlyArray<ChartRecord>,
   gameRegion: GameRegion,
   gameVer: GameVersion,
-  excludeSongsWithNoProps: boolean
+  excludeSongsWithNoProps: boolean,
 ): RatingData {
+  // Since CiRCLE, charts debuted in the previous version (PRiSM PLUS) are treated as new charts.
+  const includePreviousVerInNewCharts = gameVer >= GameVersion.CiRCLE;
   const newChartRecords = [];
   const oldChartRecords = [];
   const removedSongs = getRemovedSongs(gameRegion, gameVer);
@@ -55,9 +78,8 @@ export function analyzePlayerRating(
     if (excludeSongsWithNoProps && !songProps) {
       continue;
     }
-    const isNewChart = songProps ? songProps.debut === gameVer : record.chartType === ChartType.DX;
-    const recordWithRating = getRecordWithRating(record, songProps);
-    if (isNewChart) {
+    const recordWithRating = getRecordWithRating(gameVer, record, songProps);
+    if (isNewChart(record, songProps, gameVer, includePreviousVerInNewCharts)) {
       newChartRecords.push(recordWithRating);
     } else {
       oldChartRecords.push(recordWithRating);

@@ -1,9 +1,7 @@
-import React from 'react';
-
 import {RankDistributionRow} from './RankDistributionRow';
 
 interface Props {
-  firstCell: string;
+  firstCell: React.ReactNode;
   baseCellClassname: string | undefined;
   perColumnClassnames: ReadonlyArray<string>;
   columns: Iterable<string>;

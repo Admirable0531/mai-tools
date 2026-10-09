@@ -1,4 +1,4 @@
-import React, {useCallback} from 'react';
+import {SyntheticEvent, useCallback} from 'react';
 
 import {Language} from '../../common/lang';
 import {useLanguage} from '../../common/lang-react';
@@ -26,10 +26,10 @@ interface Props {
 
 export const CandidatesPlayedToggle = ({name, showPlayed, toggleShowPlayed}: Props) => {
   const handleRadioChange = useCallback(
-    (evt: React.SyntheticEvent<HTMLInputElement>) => {
+    (evt: SyntheticEvent<HTMLInputElement>) => {
       toggleShowPlayed(evt.currentTarget.value === '1');
     },
-    [toggleShowPlayed]
+    [toggleShowPlayed],
   );
   const messages = MessagesByLang[useLanguage()];
 

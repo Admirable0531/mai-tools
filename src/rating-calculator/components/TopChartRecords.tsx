@@ -1,16 +1,16 @@
 import '../css/song-record-styles.css';
 
-import React, {useCallback, useState} from 'react';
+import {useCallback, useState} from 'react';
 
-import {useLanguage} from '../../common/lang-react';
 import {SongDatabase} from '../../common/song-props';
-import {CommonMessages} from '../common-messages';
 import {
   compareSongsByAchv,
   compareSongsByChartType,
   compareSongsByLevel,
   compareSongsByName,
+  compareSongsByRank,
   compareSongsByRating,
+  compareSongsByVersion,
 } from '../record-comparator';
 import {ChartRecordWithRating, ColumnType} from '../types';
 import {ChartRecordsTable} from './ChartRecordsTable';
@@ -21,20 +21,21 @@ import {LevelRankDistribution} from './LevelRankDistribution';
 const COLUMNS: ReadonlyArray<ColumnType> = [
   ColumnType.NO,
   ColumnType.SONG_TITLE,
+  ColumnType.VERSION,
   ColumnType.CHART_TYPE,
   ColumnType.LEVEL,
   ColumnType.ACHIEVEMENT,
-  ColumnType.RANK,
   ColumnType.RATING,
 ];
 
 const COMPARATOR: Map<ColumnType, (x: ChartRecordWithRating, y: ChartRecordWithRating) => number> =
   new Map([
     [ColumnType.SONG_TITLE, compareSongsByName],
+    [ColumnType.VERSION, compareSongsByVersion],
     [ColumnType.CHART_TYPE, compareSongsByChartType],
     [ColumnType.LEVEL, compareSongsByLevel],
     [ColumnType.ACHIEVEMENT, compareSongsByAchv],
-    [ColumnType.RANK, compareSongsByAchv],
+    [ColumnType.RANK, compareSongsByRank],
     [ColumnType.RATING, compareSongsByRating],
   ]);
 
@@ -50,7 +51,7 @@ export const TopChartRecords = (props: Props) => {
   const {compactMode, limit, songDatabase} = props;
   // Force visible if compact mode is enabled
   const hidden = compactMode ? false : props.hidden;
-  const [sortBy, setSortBy] = useState(ColumnType.RATING);
+  const [sortBy, setSortBy] = useState<ColumnType>(ColumnType.RATING);
   const [reverse, setReverse] = useState(false);
 
   const handleSortBy = useCallback(
@@ -64,7 +65,7 @@ export const TopChartRecords = (props: Props) => {
         setReverse(false);
       }
     },
-    [sortBy, reverse]
+    [sortBy, reverse],
   );
 
   let records = props.records.slice(0, limit);
@@ -76,7 +77,6 @@ export const TopChartRecords = (props: Props) => {
     }
   }
 
-  const lang = useLanguage();
   return (
     <CollapsibleContainer
       className={
@@ -89,7 +89,6 @@ export const TopChartRecords = (props: Props) => {
           <div className="inlineBlock">
             <LevelRankDistribution
               gameVer={songDatabase.gameVer}
-              topLeftCell={CommonMessages[lang].level}
               chartRecords={records}
               topChartsCount={limit}
             />

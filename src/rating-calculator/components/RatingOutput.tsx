@@ -1,6 +1,6 @@
 import '../css/rating-output.css';
 
-import React, {useCallback, useMemo, useState} from 'react';
+import {SyntheticEvent, useCallback, useMemo, useState} from 'react';
 
 import {GameRegion} from '../../common/game-region';
 import {GameVersion} from '../../common/game-version';
@@ -53,21 +53,29 @@ export const RatingOutput = ({
   songDatabase,
 }: Props) => {
   const state = useMemo<State>(() => {
+    // Since CiRCLE, charts debuted in the previous version (PRiSM PLUS) are treated as new charts.
+    const minVersionForNewSongs = gameVer >= GameVersion.CiRCLE ? gameVer - 1 : gameVer;
     const allSongProps = allSongs
       ? songDatabase.getPropsForSongs(allSongs)
       : gameRegion === GameRegion.Jp
-      ? songDatabase.getAllProps()
-      : null;
-    const newSongs = allSongProps?.filter((song) => song.debut === gameVer);
-    const oldSongs = allSongProps?.filter((song) => song.debut < gameVer);
-    const fullNewChartsRating = newSongs ? calculateFullRating(newSongs, NUM_TOP_NEW_CHARTS) : 0;
-    const fullOldChartsRating = oldSongs ? calculateFullRating(oldSongs, NUM_TOP_OLD_CHARTS) : 0;
+        ? songDatabase.getAllProps()
+        : null;
+    const newSongs = allSongProps?.filter(
+      (song) => song.debut === gameVer || song.debut === minVersionForNewSongs,
+    );
+    const oldSongs = allSongProps?.filter((song) => song.debut < minVersionForNewSongs);
+    const fullNewChartsRating = newSongs
+      ? calculateFullRating(gameVer, newSongs, NUM_TOP_NEW_CHARTS)
+      : 0;
+    const fullOldChartsRating = oldSongs
+      ? calculateFullRating(gameVer, oldSongs, NUM_TOP_OLD_CHARTS)
+      : 0;
     return {newSongs, oldSongs, fullNewChartsRating, fullOldChartsRating};
   }, [songDatabase, allSongs, gameVer, gameRegion]);
 
   const [compactMode, setCompactMode] = useState(false);
 
-  const toggleCompactMode = useCallback((evt: React.SyntheticEvent<HTMLInputElement>) => {
+  const toggleCompactMode = useCallback((evt: SyntheticEvent<HTMLInputElement>) => {
     setCompactMode(evt.currentTarget.checked);
   }, []);
 
@@ -103,18 +111,18 @@ export const RatingOutput = ({
   return (
     <div id="ratingOutput">
       <hr className="sectionSep" />
-      <div>
-        <label>
-          <input type="checkbox" checked={compactMode} onChange={toggleCompactMode} />{' '}
-          {messages.compactMode}
-        </label>
-      </div>
       <ShareRating
         gameRegion={gameRegion}
         gameVer={gameVer}
         ratingData={ratingData}
         songDb={songDatabase}
       />
+      <div>
+        <label>
+          <input type="checkbox" checked={compactMode} onChange={toggleCompactMode} />{' '}
+          {messages.compactMode}
+        </label>
+      </div>
       {compactMode ? (
         <>
           <div className="compactRatingRow">

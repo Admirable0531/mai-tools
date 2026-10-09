@@ -1,11 +1,9 @@
 /**
  * Checklist when adding new game version:
- *   - Remove deleted songs from plate info
- *   - Add deleted songs to src/common/removed-songs.ts
- *   - Update default version in src/plate-progress/RootComponent.tsx
- *   - Update PLATE_PREFIX in src/scripts/build-plate-info.ts
+ *   - Update MagicSauceByVersion and FALLBACK_VERSION in src/common/infra/magic-api.ts
+ *   - Update deleted songs in src/common/removed-songs.ts
+ *   - Update LATEST_VERSION in this file
  */
-
 const VERSION_NAMES = [
   'maimai', // 0
   'maimai PLUS',
@@ -20,8 +18,8 @@ const VERSION_NAMES = [
   'MiLK', // 10
   'MiLK PLUS',
   'FiNALE', // 12
-  'maimaiでらっくす',
-  'maimaiでらっくす PLUS',
+  'でらっくす',
+  'でらっくす PLUS',
   'Splash', // 15
   'Splash PLUS',
   'UNiVERSE', // 17
@@ -30,8 +28,12 @@ const VERSION_NAMES = [
   'FESTiVAL PLUS',
   'BUDDiES', // 21
   'BUDDiES PLUS',
-  'PRiSM (beta)', // 23
-  'PRiSM PLUS (beta)',
+  'PRiSM', // 23
+  'PRiSM PLUS',
+  'CiRCLE', // 25
+  'CiRCLE PLUS',
+  'MAGiCAL', // 27
+  // NOTE: values here are shown in rating table, so avoid adding suffixes like "(beta)"
 ];
 
 export const enum GameVersion {
@@ -44,14 +46,17 @@ export const enum GameVersion {
   BUDDiES_PLUS = 22,
   PRiSM = 23,
   PRiSM_PLUS = 24,
+  CiRCLE = 25,
+  CiRCLE_PLUS = 26,
+  MAGiCAL = 27,
 }
 
-export const LATEST_VERSION = GameVersion.PRiSM_PLUS;
+export const LATEST_VERSION = GameVersion.MAGiCAL;
 
 export function validateGameVersion(
   ver: number | string | null,
   minVer: number,
-  maxVer: GameVersion = LATEST_VERSION
+  maxVer: GameVersion = LATEST_VERSION,
 ): GameVersion {
   const numVer = typeof ver === 'string' ? parseInt(ver) : ver;
   if (!ver || isNaN(numVer)) {

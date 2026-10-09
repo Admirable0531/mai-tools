@@ -1,4 +1,4 @@
-import React, {useCallback, useState} from 'react';
+import {SyntheticEvent, useCallback, useState} from 'react';
 
 import {Language} from '../../common/lang';
 import {useLanguage} from '../../common/lang-react';
@@ -60,11 +60,11 @@ export const RatingOverview = ({
   const [showMore, setShowMore] = useState<boolean>();
 
   const toggleShowMore = useCallback(
-    (e: React.SyntheticEvent) => {
+    (e: SyntheticEvent) => {
       e.preventDefault();
       setShowMore(!showMore);
     },
-    [showMore]
+    [showMore],
   );
 
   const lang = useLanguage();

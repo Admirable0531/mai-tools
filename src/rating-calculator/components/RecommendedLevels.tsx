@@ -1,4 +1,4 @@
-import React, {useCallback, useState} from 'react';
+import {useCallback, useState} from 'react';
 
 import {RecommendedLevelRow} from '../../common/components/RecommendedLevelRow';
 import {GameRegion} from '../../common/game-region';
@@ -55,8 +55,8 @@ export const RecommendedLevels = ({
   const oldLvsByRank = calcRecommendedLevels(lowestOldChartRating + 1, ranks);
   const [contentHidden, setContentHidden] = useState<boolean>(false);
   const handleTitleClick = useCallback(() => {
-    setContentHidden(!contentHidden);
-  }, [contentHidden]);
+    setContentHidden(prev => !prev);
+  }, []);
   return (
     <div className="recLvSection">
       <CollapsibleSectionTitle
@@ -90,7 +90,7 @@ export const RecommendedLevels = ({
                         rankTitle={rank.title}
                         recLv={recLv}
                       />
-                    ))
+                    )),
                   )
                   .flat()}
               </>
@@ -111,7 +111,7 @@ export const RecommendedLevels = ({
                         recLv={recLv}
                         includeOldVersions
                       />
-                    ))
+                    )),
                   )
                   .flat()}
               </>

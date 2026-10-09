@@ -3,10 +3,10 @@
  * (achievement rate, break distribution, etc.), and displays it
  * in old maimai-NET style.
  */
-import React from 'react';
-import ReactDOM from 'react-dom';
+import ReactDOM from 'react-dom/client';
 
 import {RootComponent} from './components/RootComponent';
 import './css/styles.css';
 
-ReactDOM.render(<RootComponent />, document.getElementById("root"));
+const root = ReactDOM.createRoot(document.getElementById("root")!);
+root.render(<RootComponent />);

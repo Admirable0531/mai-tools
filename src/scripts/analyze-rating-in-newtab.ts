@@ -59,12 +59,12 @@ declare global {
 
   async function fetchRecentPlays(
     songDb: SongDatabase,
-    visitedCharts: Set<string>
+    visitedCharts: Set<string>,
   ): Promise<ChartRecord[]> {
     const dom = await fetchPage(PLAY_HISTORY_PATH);
     // Keep only new records
     const rows = Array.from(
-      dom.querySelectorAll<HTMLElement>('.main_wrapper .p_10.t_l.f_0.v_b')
+      dom.querySelectorAll<HTMLElement>('.main_wrapper .p_10.t_l.f_0.v_b'),
     ).filter((row) => getIsNewRecord(row));
     return rows
       .map((row) => getChartRecordFromPlayRecordRow(row, songDb))
@@ -84,7 +84,7 @@ declare global {
 
   async function fetchRecordsFromRatingPage(
     songDb: SongDatabase,
-    visitedCharts: Set<string>
+    visitedCharts: Set<string>,
   ): Promise<ChartRecord[]> {
     const dom =
       location.pathname === '/maimai-mobile/home/ratingTargetMusic/'
@@ -119,6 +119,9 @@ declare global {
         level,
         chartType,
         achievement,
+        // TODO(#130): It looks like the rating page does not show FC/AP status.
+        // We may need to fetch it from song details page (using idx).
+        fcap: null,
       });
       visitedCharts.add(key);
     }
@@ -132,7 +135,7 @@ declare global {
   async function fetchSelfRecords(
     gameVer: GameVersion,
     send: (action: string, payload: unknown) => void,
-    fullRecords: boolean = false
+    fullRecords: boolean = false,
   ): Promise<ChartRecord[]> {
     // Fetch player grade
     const playerGrade = isOnFriendPage ? null : getPlayerGrade(document.body);
@@ -145,25 +148,28 @@ declare global {
     send('showProgress', statusText(LANG, null, false));
     const recentScoreList = await fetchRecentPlays(songDb, visitedCharts);
     let scoreList = recentScoreList;
-    try {
-      scoreList = scoreList.concat(await fetchRecordsFromRatingPage(songDb, visitedCharts));
-    } catch (e) {
-      console.warn('Failed to fetch rating page', e);
-    }
     // Fetch scores by difficulty
     for (const difficulty of SELF_SCORE_URLS.keys()) {
       send('showProgress', statusText(LANG, difficulty, false));
       const scoresByDifficulty = await (fullRecords ? fetchScoresFull : fetchScores)(
         difficulty,
         domCache,
-        songDb
+        songDb,
       );
       scoreList = scoreList.concat(
         scoresByDifficulty.filter((r) => {
           const key = getSongNicknameWithChartType(r.songName, r.genre, r.chartType) + r.difficulty;
-          return !visitedCharts.has(key);
-        })
+          const visited = visitedCharts.has(key);
+          visitedCharts.add(key);
+          return !visited;
+        }),
       );
+    }
+    // Fetch records from rating page
+    try {
+      scoreList = scoreList.concat(await fetchRecordsFromRatingPage(songDb, visitedCharts));
+    } catch (e) {
+      console.warn('Failed to fetch rating page', e);
     }
     send('showProgress', '');
     send('setPlayerScore', scoreList);
@@ -231,7 +237,7 @@ declare global {
       window.removeEventListener('message', window.ratingCalcMsgListener);
     }
     window.ratingCalcMsgListener = async (
-      evt: MessageEvent<string | {action: string; payload?: string | number}>
+      evt: MessageEvent<string | {action: string; payload?: string | number}>,
     ) => {
       console.log(evt.origin, evt.data);
       if (ALLOWED_ORIGINS.includes(evt.origin)) {
@@ -247,7 +253,7 @@ declare global {
             const allSongs = await fetchAllSongs(domCache.get(Difficulty.BASIC));
             const visitedSongs = new Set<string>();
             allSongs.forEach((s) =>
-              visitedSongs.add(getSongNicknameWithChartType(s.name, s.genre, s.dx))
+              visitedSongs.add(getSongNicknameWithChartType(s.name, s.genre, s.dx)),
             );
             for (const r of recentRecords) {
               if (

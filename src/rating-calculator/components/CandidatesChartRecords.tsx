@@ -1,10 +1,11 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import {SyntheticEvent, useCallback, useMemo, useState} from 'react';
 
 import {GameVersion} from '../../common/game-version';
 import {useLanguage} from '../../common/lang-react';
 import {getMaxMinorBeforePlus, getMinMinorOfPlus, LevelDef} from '../../common/level-helper';
 import {RANK_SSS_PLUS} from '../../common/rank-functions';
 import {SongDatabase, SongProperties} from '../../common/song-props';
+import {loadUserPreference, saveUserPreference, UserPreference} from '../../common/user-preference';
 import {getCandidateCharts, getNotPlayedCharts} from '../candidate-songs';
 import {CommonMessages} from '../common-messages';
 import {
@@ -12,8 +13,8 @@ import {
   compareSongsByChartType,
   compareSongsByLevel,
   compareSongsByName,
-  compareSongsByNextRank,
   compareSongsByNextRating,
+  compareSongsByVersion,
 } from '../record-comparator';
 import {ChartRecordWithRating, ColumnType, RatingData} from '../types';
 import {CandidatesPlayedToggle} from './CandidatesPlayedToggle';
@@ -28,21 +29,21 @@ const OLD_CANDIDATE_SONGS_POOL_SIZE = 250;
 const COLUMNS: ReadonlyArray<ColumnType> = [
   ColumnType.NO,
   ColumnType.SONG_TITLE,
+  ColumnType.VERSION,
   ColumnType.CHART_TYPE,
   ColumnType.LEVEL,
   ColumnType.ACHIEVEMENT,
-  ColumnType.NEXT_RANK,
-  ColumnType.NEXT_RATING,
+  ColumnType.TARGET,
 ];
 
 const COMPARATOR: Map<ColumnType, (x: ChartRecordWithRating, y: ChartRecordWithRating) => number> =
   new Map([
     [ColumnType.SONG_TITLE, compareSongsByName],
+    [ColumnType.VERSION, compareSongsByVersion],
     [ColumnType.CHART_TYPE, compareSongsByChartType],
     [ColumnType.LEVEL, compareSongsByLevel],
     [ColumnType.ACHIEVEMENT, compareSongsByAchv],
-    [ColumnType.NEXT_RANK, compareSongsByNextRank],
-    [ColumnType.NEXT_RATING, compareSongsByNextRating],
+    [ColumnType.TARGET, compareSongsByNextRating],
   ]);
 
 interface Props {
@@ -78,8 +79,19 @@ export const CandidateChartRecords = ({
     minRating ||
       (ratingData.oldTopChartsCount
         ? Math.floor(0.9 * ratingData.oldChartRecords[ratingData.oldTopChartsCount - 1].rating)
-        : 0)
+        : 0),
   );
+
+  // Since CiRCLE, All Perfect adds one bonus point.
+  const hasAllPerfectBonus = songDatabase.gameVer >= GameVersion.CiRCLE;
+  const [includeAp, setIncludeAp] = useState(
+    Boolean(loadUserPreference(UserPreference.IncludeAllPerfect)),
+  );
+  const toggleIncludeAp = useCallback((evt: SyntheticEvent<HTMLInputElement>) => {
+    const includeAp = evt.currentTarget.checked;
+    saveUserPreference(UserPreference.IncludeAllPerfect, String(includeAp));
+    setIncludeAp(evt.currentTarget.checked);
+  }, []);
 
   const candidates = useMemo(() => {
     const poolSize = isCurrentVersion
@@ -88,19 +100,20 @@ export const CandidateChartRecords = ({
     const lvFilter = minorLvToShow
       ? {title: levelToShow.title, minLv: minorLvToShow, maxLv: minorLvToShow}
       : levelToShow;
+    const includeAllPerfect = hasAllPerfectBonus && includeAp;
     return showPlayed
-      ? getCandidateCharts(records, topCount, poolSize, lvFilter)
+      ? getCandidateCharts(includeAllPerfect, records, topCount, poolSize, lvFilter)
       : songList
-      ? getNotPlayedCharts(songList, records, minRating, poolSize, lvFilter)
-      : [];
-  }, [songList, records, showPlayed, levelToShow, minorLvToShow]);
+        ? getNotPlayedCharts(includeAllPerfect, songList, records, minRating, poolSize, lvFilter)
+        : [];
+  }, [songDatabase, songList, records, showPlayed, levelToShow, minorLvToShow, includeAp]);
 
   const toggleShowMore = useCallback(
-    (evt: React.SyntheticEvent<HTMLAnchorElement>) => {
+    (evt: SyntheticEvent<HTMLAnchorElement>) => {
       evt.preventDefault();
       setShowAll(!showAll);
     },
-    [showAll]
+    [showAll],
   );
 
   const toggleShowPlayed = useCallback((showPlayed: boolean) => {
@@ -108,21 +121,21 @@ export const CandidateChartRecords = ({
   }, []);
 
   const selectLv = useCallback(
-    (evt: React.SyntheticEvent<HTMLSelectElement>) => {
+    (evt: SyntheticEvent<HTMLSelectElement>) => {
       const majorLv = levels.find((lv) => evt.currentTarget.value === lv.title);
       if (levelToShow !== majorLv) {
         setMinorLvToShow(null);
       }
       setLevelToShow(majorLv);
     },
-    [setLevelToShow]
+    [setLevelToShow],
   );
   const selectMinorLv = useCallback(
-    (evt: React.SyntheticEvent<HTMLSelectElement>) => {
+    (evt: SyntheticEvent<HTMLSelectElement>) => {
       const minorLv = parseFloat(evt.currentTarget.value);
       setMinorLvToShow(isNaN(minorLv) ? null : minorLv);
     },
-    [setMinorLvToShow]
+    [setMinorLvToShow],
   );
 
   const handleSortBy = useCallback(
@@ -136,7 +149,7 @@ export const CandidateChartRecords = ({
         setReverse(false);
       }
     },
-    [sortBy, reverse]
+    [sortBy, reverse],
   );
 
   const endIndex = showAll ? candidates.length : Math.min(candidates.length, CANDIDATE_SONGS_LIMIT);
@@ -168,6 +181,14 @@ export const CandidateChartRecords = ({
           showPlayed={showPlayed}
           toggleShowPlayed={toggleShowPlayed}
         />
+      )}
+      {hasAllPerfectBonus && (
+        <div>
+          <label>
+            <input type="checkbox" checked={includeAp} onChange={toggleIncludeAp} />{' '}
+            {messages.includeAllPerfect}
+          </label>
+        </div>
       )}
       <div>
         <select

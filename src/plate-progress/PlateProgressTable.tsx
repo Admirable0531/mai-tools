@@ -1,5 +1,3 @@
-import React from 'react';
-
 import {Difficulty, getDifficultyShortName} from '../common/difficulties';
 import {PlateType, ProgressByDifficulty, VersionInfo} from './plate_info';
 import {PlateProgressTableCell} from './PlateProgressTableCell';
@@ -9,12 +7,21 @@ interface Props {
   songCount: Record<Difficulty, number>;
   progressByPlate: Record<PlateType, ProgressByDifficulty>;
   plateNames: VersionInfo['plate_name'];
+  selectedDifficulty: Difficulty | null;
+  selectedPlateType: PlateType | null;
   selectPlateAndDifficulty: (plate: PlateType, d: Difficulty) => void;
 }
 
 export function PlateProgressTable(props: Props) {
-  const {activeDifficulties, songCount, plateNames, progressByPlate, selectPlateAndDifficulty} =
-    props;
+  const {
+    activeDifficulties,
+    songCount,
+    plateNames,
+    progressByPlate,
+    selectedDifficulty,
+    selectedPlateType,
+    selectPlateAndDifficulty,
+  } = props;
   return (
     <table>
       <thead>
@@ -45,6 +52,7 @@ export function PlateProgressTable(props: Props) {
                   plateType={plateType as PlateType}
                   value={progressByDifficulty[d][1].length}
                   d={d}
+                  selected={d === selectedDifficulty && plateType === selectedPlateType}
                   onClick={selectPlateAndDifficulty}
                 />
               ))}

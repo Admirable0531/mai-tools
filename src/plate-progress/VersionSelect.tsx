@@ -1,5 +1,3 @@
-import React from 'react';
-
 import {GameVersion, getVersionName, LATEST_VERSION} from '../common/game-version';
 
 const VERSIONS = (function () {
@@ -8,7 +6,7 @@ const VERSIONS = (function () {
     a.push(i.toFixed(0));
   }
   a.push(`0-${GameVersion.FiNALE}`);
-  for (let i = GameVersion.DX; i < LATEST_VERSION; i++) {
+  for (let i = GameVersion.DX; i <= LATEST_VERSION; i++) {
     a.push(i.toFixed(0));
   }
   return a;
@@ -26,7 +24,7 @@ export function VersionSelect(props: Props) {
         const label = ver
           .split('-')
           .map((v) => getVersionName(parseInt(v)))
-          .join(' ~ ');
+          .join(' - ');
         return (
           <option key={idx} value={ver}>
             {label}

@@ -3,6 +3,7 @@ import {GameVersion, LATEST_VERSION} from '../game-version';
 import {getRemovedSongs} from '../removed-songs';
 import {SongDatabase, SongProperties} from '../song-props';
 import {MagicApi} from './magic-api';
+import {addForkMissingSongs} from './fork-missing-songs';
 import {MaiToolsApi} from './mai-tools-api';
 
 export class SongDatabaseFactory {
@@ -24,6 +25,8 @@ export class SongDatabaseFactory {
     for (const songProps of chartLevelOverrides) {
       database.insertOrUpdateSong(songProps);
     }
+
+    await addForkMissingSongs(database);
 
     const regionOverrides = await this.maiToolsApi.fetchRegionOverrides(gameRegion);
     // console.log('regionOverrides', regionOverrides);

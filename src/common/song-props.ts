@@ -96,6 +96,12 @@ export class SongDatabase {
     this.standardMap.delete(name);
   }
 
+  /** Whether this chart type of the song is known, without the not-found warning. */
+  hasSong(songName: string, genre: string, chartType: ChartType): boolean {
+    const map = chartType === ChartType.DX ? this.dxMap : this.standardMap;
+    return map.has(songName) || map.has(getSongNickname(songName, genre));
+  }
+
   hasDualCharts(songName: string): boolean {
     if (songName === 'Link') return true;
     return this.dxMap.has(songName) && this.standardMap.has(songName);

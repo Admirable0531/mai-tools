@@ -1,0 +1,15 @@
+{
+  "_comment": "Fork-only stopgap for songs upstream's data doesn't have yet. Only fills gaps: a song upstream knows (by name + chart type) is skipped, so upstream's data always wins once it catches up, and an entry can be deleted then. lv is [Basic, Advanced, Expert, Master(, Re:Master)]; negative = only the official level is known (the minimum constant for it, e.g. 12+ -> -12.6), positive = exact internal constant.",
+  "songs": [
+    {
+      "name": "OV3RCLOCK",
+      "genre": "maimai",
+      "dx": 1,
+      "debut": 27,
+      "lv": [-6, -7.6, -12.6, 14.8],
+      "ico": "360427dd3d2c96ca",
+      "regionOverrides": {"intl": {"debut": 26}},
+      "_source": "maimai.sega.jp maimai_songs.json (2026-10-02, MAGiCAL; levels 6/7+/12+/14+), Master constant 14.8 per Ryan; on Intl during CiRCLE PLUS"
+    }
+  ]
+}

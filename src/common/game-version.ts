@@ -68,6 +68,12 @@ export function validateGameVersion(
   return maxVer;
 }
 
-export function getVersionName(ver: GameVersion) {
-  return VERSION_NAMES[ver];
+/**
+ * '?' for a version this build doesn't know yet. A chart from a newer
+ * version than the song data covers has no name, and callers call
+ * .replace() on the result: the rating calculator's version column threw
+ * there, blanking the whole page for any player with such a chart.
+ */
+export function getVersionName(ver: GameVersion): string {
+  return VERSION_NAMES[ver] ?? '?';
 }

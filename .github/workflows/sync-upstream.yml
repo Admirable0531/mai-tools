@@ -1,0 +1,85 @@
+name: Sync with upstream
+
+# Merges myjian/mai-tools into this fork every day, so new song data and
+# fixes arrive without anyone remembering to pull. The maimaiscrape scraper
+# loads this fork's scripts, and a stale song database crashes the rating
+# calculator on new charts.
+#
+# A merge conflict fails the job (GitHub emails the repo owner) and pushes
+# nothing; resolve it by hand and push, and the next run carries on.
+#
+# A push made with GITHUB_TOKEN doesn't trigger other workflows, so the
+# "Build with webpack and deploy" workflow won't run for the merge. This
+# workflow builds and deploys it itself, only when something was merged.
+# Kept in its own file so upstream changes to webpack.yml never conflict.
+
+on:
+  schedule:
+    - cron: '17 19 * * *' # 03:17 Malaysia time, well clear of the 22:45 scrape
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      merged: ${{ steps.merge.outputs.merged }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          fetch-depth: 0
+
+      - name: Merge upstream/gh-pages
+        id: merge
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/myjian/mai-tools.git
+          git fetch upstream gh-pages
+          if git merge-base --is-ancestor upstream/gh-pages HEAD; then
+            echo 'Already up to date with upstream.'
+            echo 'merged=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git merge --no-edit upstream/gh-pages
+          git push origin HEAD:gh-pages
+          echo 'merged=true' >> "$GITHUB_OUTPUT"
+
+      # Built here rather than through webpack-build.yml: that one checks out
+      # the commit that triggered the run, which is from before the merge.
+      - uses: actions/setup-node@v4
+        if: steps.merge.outputs.merged == 'true'
+        with:
+          node-version-file: package.json
+
+      - name: Build
+        if: steps.merge.outputs.merged == 'true'
+        run: |
+          npm install
+          npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.merge.outputs.merged == 'true'
+        with:
+          path: build/
+
+  deploy:
+    needs: sync
+    if: needs.sync.outputs.merged == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

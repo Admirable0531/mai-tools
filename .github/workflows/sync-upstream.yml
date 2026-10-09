@@ -1,7 +1,8 @@
 name: Sync with upstream
 
 # Merges myjian/mai-tools into this fork every day, so new song data and
-# fixes arrive without anyone remembering to pull. The maimaiscrape scraper
+# fixes arrive without anyone remembering to pull, and regenerates
+# public/data/fork/missing-songs-auto.json for charts upstream lacks. The maimaiscrape scraper
 # loads this fork's scripts, and a stale song database crashes the rating
 # calculator on new charts.
 #
@@ -10,7 +11,7 @@ name: Sync with upstream
 #
 # A push made with GITHUB_TOKEN doesn't trigger other workflows, so the
 # "Build with webpack and deploy" workflow won't run for the merge. This
-# workflow builds and deploys it itself, only when something was merged.
+# workflow builds and deploys it itself, only when something changed.
 # Kept in its own file so upstream changes to webpack.yml never conflict.
 
 on:
@@ -28,7 +29,7 @@ jobs:
     permissions:
       contents: write
     outputs:
-      merged: ${{ steps.merge.outputs.merged }}
+      changed: ${{ steps.push.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,34 +45,52 @@ jobs:
           git fetch upstream gh-pages
           if git merge-base --is-ancestor upstream/gh-pages HEAD; then
             echo 'Already up to date with upstream.'
-            echo 'merged=false' >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            git merge --no-edit upstream/gh-pages
           fi
-          git merge --no-edit upstream/gh-pages
-          git push origin HEAD:gh-pages
-          echo 'merged=true' >> "$GITHUB_OUTPUT"
 
-      # Built here rather than through webpack-build.yml: that one checks out
-      # the commit that triggered the run, which is from before the merge.
       - uses: actions/setup-node@v4
-        if: steps.merge.outputs.merged == 'true'
         with:
           node-version-file: package.json
 
+      # Charts arcade-songs has but upstream's song data doesn't yet. Allowed
+      # to fail (arcade-songs down, say) without holding back the merge.
+      - name: Regenerate missing-songs-auto.json
+        continue-on-error: true
+        run: |
+          node scripts/fork/generate-missing-songs.mjs
+          if ! git diff --quiet -- public/data/fork/; then
+            git add public/data/fork/
+            git commit -m 'Update missing-songs-auto.json from arcade-songs'
+          fi
+
+      - name: Push
+        id: push
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/gh-pages)" ]; then
+            echo 'Nothing new.'
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            git push origin HEAD:gh-pages
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      # Built here rather than through webpack-build.yml: that one checks out
+      # the commit that triggered the run, which is from before the merge.
       - name: Build
-        if: steps.merge.outputs.merged == 'true'
+        if: steps.push.outputs.changed == 'true'
         run: |
           npm install
           npm run build
 
       - uses: actions/upload-pages-artifact@v3
-        if: steps.merge.outputs.merged == 'true'
+        if: steps.push.outputs.changed == 'true'
         with:
           path: build/
 
   deploy:
     needs: sync
-    if: needs.sync.outputs.merged == 'true'
+    if: needs.sync.outputs.changed == 'true'
     runs-on: ubuntu-latest
     permissions:
       pages: write

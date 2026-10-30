@@ -140,6 +140,18 @@
       ]
     },
     {
+      "name": "Happy Halloween",
+      "genre": "niconico＆ボーカロイド",
+      "dx": 1,
+      "debut": 27,
+      "lv": [
+        -2,
+        -5,
+        9.8,
+        13.5
+      ]
+    },
+    {
       "name": "IMPACT",
       "genre": "オンゲキ＆CHUNITHM",
       "dx": 1,
@@ -409,6 +421,23 @@
         10.4,
         13.2
       ]
+    },
+    {
+      "name": "魔法仕掛けのファンタジア",
+      "genre": "maimai",
+      "dx": 1,
+      "debut": 27,
+      "lv": [
+        -5,
+        8,
+        12.2,
+        14.8
+      ],
+      "regionOverrides": {
+        "intl": {
+          "debut": 26
+        }
+      }
     }
   ]
 }
